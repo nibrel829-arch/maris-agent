@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "source": "CEO spec §8 Research + Truth Rules",
+  "labels": {
+    "FACT": "Verifiable statement supported by an identified source the system actually retrieved.",
+    "EVIDENCE": "Recorded data point supporting a claim, with its source and confidence.",
+    "INTERPRETATION": "The Manager's reading of facts and evidence. Must be marked as interpretation.",
+    "RECOMMENDATION": "Proposed action. Must be marked as recommendation, not fact."
+  },
+  "neverFabricate": [
+    "statistics",
+    "sources",
+    "companies",
+    "leads",
+    "customers",
+    "testimonials",
+    "case studies",
+    "medical facts",
+    "prices",
+    "market demand",
+    "reviews",
+    "business results"
+  ],
+  "rules": [
+    "Every numerical claim must carry a source or be marked unverified.",
+    "If a claim cannot be sourced, record it as an uncertainty rather than dropping it silently.",
+    "Unverified claims are labelled 'unverified' and never presented as FACT.",
+    "Confidence must always be surfaced to the user.",
+    "Never present an interpretation as a fact, or a fact as a recommendation."
+  ],
+  "confidenceLevels": {
+    "high": "Sourced from a primary or authoritative retrieved source.",
+    "medium": "Sourced from a secondary source or triangulated.",
+    "low": "Weak or indirect support; treat as a hypothesis.",
+    "unverified": "No source was retrieved. Must be stated as an open question."
+  }
+}

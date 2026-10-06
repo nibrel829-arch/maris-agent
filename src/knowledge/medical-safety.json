@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "source": "CEO spec §8 Dental/medical safety controls",
+  "principle": "The agent must never diagnose or prescribe. Dental/medical output is informational, requires review, and must not be presented as clinical advice.",
+  "prohibitedPatterns": [
+    "you have",
+    "you likely have",
+    "this is a symptom of",
+    "diagnos",
+    "take this medication",
+    "prescribe",
+    "dosage",
+    "you should take",
+    "stop taking",
+    "this treatment will cure",
+    "guaranteed to heal"
+  ],
+  "requiredDisclaimer": "This information is general and educational only. It is not a diagnosis or medical advice. Consult a qualified dental or medical professional for advice about a specific condition.",
+  "rules": [
+    "Never output a diagnosis for a named person or described condition.",
+    "Never recommend a specific drug, dosage or prescription-only treatment.",
+    "Never claim a clinical outcome, success rate or cure rate without a retrieved, citable source.",
+    "Dental/medical output must be flagged medical_review_required.",
+    "When a user describes symptoms, respond with general education plus a recommendation to consult a professional."
+  ],
+  "blocksDelivery": true
+}

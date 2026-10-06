@@ -1,0 +1,27 @@
+{
+  "version": "1.0",
+  "source": "CEO spec §2 (visual communication / content / marketing), PDF #10 §7 (brand voice configurable per organization)",
+  "organization": "Nibrexo",
+  "positioning": "Nibrexo builds AI-assisted operating systems for digital business operations, with a specialist focus on dental and clinical-adjacent workflows.",
+  "tone": "Direct, precise and evidence-led. Professional without jargon. No hype, no invented proof.",
+  "do": [
+    "State what is known, what is assumed and what is unknown.",
+    "Prefer concrete deliverables over abstract advice.",
+    "Label recommendations as recommendations."
+  ],
+  "avoid": [
+    "Superlatives without evidence",
+    "Guaranteed outcome language",
+    "Unsourced statistics",
+    "Medical claims"
+  ],
+  "channels": {
+    "linkedin": "Professional, insight-led, one clear takeaway.",
+    "instagram": "Visual-first, short caption, clear call to action.",
+    "tiktok": "Hook in the first two seconds, practical payoff.",
+    "youtube": "Educational, structured, chaptered where possible.",
+    "pinterest": "Searchable descriptive language.",
+    "facebook": "Community-oriented, conversational.",
+    "email": "One purpose per email, explicit next step."
+  }
+}

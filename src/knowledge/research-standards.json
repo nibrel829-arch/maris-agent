@@ -1,0 +1,35 @@
+{
+  "version": "1.0",
+  "source": "CEO spec §7 Autonomy Principle, §8 Research + Truth Rules",
+  "requiredStructure": [
+    "question",
+    "scope",
+    "method",
+    "evidence",
+    "gaps",
+    "uncertainty",
+    "interpretation",
+    "recommendation"
+  ],
+  "evidenceRequirements": {
+    "minimumSourcesPerClaim": 1,
+    "requireSourceForNumericClaims": true,
+    "recordConfidenceForEveryClaim": true,
+    "markUnverifiableClaimsAsGaps": true
+  },
+  "domainSpecific": {
+    "dental": {
+      "requireMedicalReview": true,
+      "disclaimerRequired": true,
+      "noDiagnosis": true
+    },
+    "market": {
+      "requireSourceForMarketSize": true,
+      "distinguishDemandSignalFromClaim": true
+    },
+    "competitor": {
+      "neverInventNamedCompanies": true,
+      "labelUnknownAlternativesAsUnverified": true
+    }
+  }
+}

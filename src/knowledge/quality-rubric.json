@@ -1,0 +1,48 @@
+{
+  "version": "1.0",
+  "source": "CEO spec §6 Quality Control stage, §8 Research + Truth Rules, PDF #08 §14 Agent Safety Rules",
+  "checks": [
+    {
+      "id": "evidence-present",
+      "severity": "error",
+      "blocking": true,
+      "description": "Every factual claim carries a source or is explicitly marked unverified."
+    },
+    {
+      "id": "no-fabricated-numbers",
+      "severity": "error",
+      "blocking": true,
+      "description": "No unsourced statistics, prices, market sizes or business results."
+    },
+    {
+      "id": "uncertainty-surfaced",
+      "severity": "warning",
+      "blocking": false,
+      "description": "Uncertainty is stated rather than hidden."
+    },
+    {
+      "id": "claim-labelling",
+      "severity": "warning",
+      "blocking": false,
+      "description": "Claims are labelled FACT / EVIDENCE / INTERPRETATION / RECOMMENDATION."
+    },
+    {
+      "id": "medical-safety",
+      "severity": "error",
+      "blocking": true,
+      "description": "No diagnosis, prescription or unsourced clinical claim."
+    },
+    {
+      "id": "action-honesty",
+      "severity": "error",
+      "blocking": true,
+      "description": "Prepared actions are described as prepared, never as completed."
+    },
+    {
+      "id": "deliverable-completeness",
+      "severity": "warning",
+      "blocking": false,
+      "description": "The requested deliverable contains the sections the request implies."
+    }
+  ]
+}

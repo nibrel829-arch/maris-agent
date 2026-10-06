@@ -1,0 +1,76 @@
+{
+  "version": "1.0",
+  "source": "CEO spec §9 Approval / Action Boundaries; PDF #08 §8 Approval Engine; PDF #04 §1",
+  "description": "Risk policy for the Manager approval engine. External, irreversible or high-impact actions stop for explicit human approval. Expired approvals cannot be reused.",
+  "defaultTtlMinutes": 1440,
+  "riskByAction": {
+    "publish": "high",
+    "send": "high",
+    "delete": "high",
+    "purchase": "high",
+    "financial_commitment": "high",
+    "contract": "high",
+    "account_change": "high",
+    "sensitive_customer_action": "high",
+    "external_communication": "high",
+    "edit": "medium",
+    "create": "medium",
+    "approve": "medium",
+    "view": "low"
+  },
+  "requireApproval": [
+    {
+      "id": "external-communication",
+      "action": "external_communication",
+      "reason": "Important external communication requires approval (CEO spec §9).",
+      "appliesTo": ["send_email", "send_reply", "send_outreach", "send_dm"]
+    },
+    {
+      "id": "publishing",
+      "action": "publish",
+      "reason": "Major publishing requires approval (CEO spec §9; PDF #08 §8).",
+      "appliesTo": ["publish_post", "schedule_post"]
+    },
+    {
+      "id": "deletion",
+      "action": "delete",
+      "reason": "Deletion requires approval (CEO spec §9).",
+      "appliesTo": ["delete_client", "delete_content", "delete_template"]
+    },
+    {
+      "id": "financial",
+      "action": "financial_commitment",
+      "reason": "Purchases and financial commitments require approval (CEO spec §9).",
+      "appliesTo": ["create_purchase", "commit_spend", "approve_contract"]
+    },
+    {
+      "id": "major-account-change",
+      "action": "account_change",
+      "reason": "Major account changes require approval (CEO spec §9).",
+      "appliesTo": ["change_role", "change_permissions", "disconnect_account"]
+    },
+    {
+      "id": "sensitive-customer-action",
+      "action": "sensitive_customer_action",
+      "reason": "Sensitive customer actions require approval (CEO spec §9).",
+      "appliesTo": ["qualify_lead_public", "export_client_data", "contact_client_bulk"]
+    }
+  ],
+  "autoApprove": {
+    "enabled": false,
+    "reason": "Auto-approval stays off. Internal preparation (research, drafting, analysis) is low risk and never requires approval; anything external or high impact stops."
+  },
+  "neverRequireApprovalFor": [
+    "research",
+    "analysis",
+    "planning",
+    "drafting",
+    "internal_preparation"
+  ],
+  "notes": [
+    "Approval must be explicit (PDF #08 §8).",
+    "Rejected actions are not executed (PDF #08 §8).",
+    "Expired approvals cannot be reused (PDF #08 §8).",
+    "The system must never claim an action happened when it only prepared it (CEO spec §9)."
+  ]
+}

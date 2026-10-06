@@ -1,0 +1,12 @@
+{
+  "id": "social-community",
+  "name": "Social & Community",
+  "description": "Plans social presence and community management across supported platforms. Publishing, scheduling and outbound replies run through platform adapters and only where the official API supports the operation; unsupported operations are reported as unsupported.",
+  "workTypes": ["social_media", "community_management", "marketing"],
+  "modules": ["social", "inbox", "content", "ai"],
+  "tools": ["list_social_accounts", "create_social_plan", "publish_post", "schedule_post", "create_community_plan", "create_content_item"],
+  "knowledge": ["brand-voice.json"],
+  "outputs": ["social_plan", "community_plan"],
+  "maxRisk": "high",
+  "version": "1.0"
+}

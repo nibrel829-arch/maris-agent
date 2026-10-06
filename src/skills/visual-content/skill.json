@@ -1,0 +1,12 @@
+{
+  "id": "visual-content",
+  "name": "Visual Content",
+  "description": "Produces visual communication concepts: message hierarchy, formats, asset list, accessibility and brand consistency checks. Prepares specifications; it does not claim external rendering that was not performed.",
+  "workTypes": ["visual_communication", "content", "marketing"],
+  "modules": ["content", "ai"],
+  "tools": ["create_visual_concept", "list_visual_concepts", "log_activity"],
+  "knowledge": ["brand-voice.json"],
+  "outputs": ["visual_concept"],
+  "maxRisk": "low",
+  "version": "1.0"
+}

@@ -1,0 +1,12 @@
+{
+  "id": "lead-generation",
+  "name": "Lead Generation",
+  "description": "Identifies, researches and records leads. Every lead carries its source and evidence. The system never invents leads, customers, testimonials or case studies.",
+  "workTypes": ["lead_generation", "lead_qualification", "sales"],
+  "modules": ["clients", "ai"],
+  "tools": ["create_lead", "list_leads", "qualify_lead", "create_research_brief", "log_activity"],
+  "knowledge": ["claim-policy.json", "research-standards.json"],
+  "outputs": ["lead_list", "qualification_assessment"],
+  "maxRisk": "medium",
+  "version": "1.0"
+}

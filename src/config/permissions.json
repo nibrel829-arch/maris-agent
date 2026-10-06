@@ -1,0 +1,68 @@
+{
+  "version": "1.0",
+  "source": "PDF #04 §3 User Roles & Permissions; PDF #12 §15 User Roles & Permissions",
+  "description": "Role -> module -> allowed actions. The backend is authoritative; the UI only hides what the backend already denies (PDF #04 §18, PDF #07 §9).",
+  "actions": ["view", "create", "edit", "delete", "publish", "send", "approve"],
+  "modules": ["dashboard", "social", "content", "inbox", "clients", "email", "ai", "settings"],
+  "roles": {
+    "owner": {
+      "label": "Owner",
+      "description": "Full organization control including security, integrations and permissions.",
+      "modules": {
+        "dashboard": ["view", "create", "edit", "delete", "publish", "send", "approve"],
+        "social": ["view", "create", "edit", "delete", "publish", "send", "approve"],
+        "content": ["view", "create", "edit", "delete", "publish", "send", "approve"],
+        "inbox": ["view", "create", "edit", "delete", "publish", "send", "approve"],
+        "clients": ["view", "create", "edit", "delete", "publish", "send", "approve"],
+        "email": ["view", "create", "edit", "delete", "publish", "send", "approve"],
+        "ai": ["view", "create", "edit", "delete", "publish", "send", "approve"],
+        "settings": ["view", "create", "edit", "delete", "publish", "send", "approve"]
+      }
+    },
+    "admin": {
+      "label": "Admin",
+      "description": "Manages users, permissions, integrations, clients and content. Cannot change organization ownership.",
+      "modules": {
+        "dashboard": ["view", "create", "edit", "approve"],
+        "social": ["view", "create", "edit", "publish", "approve"],
+        "content": ["view", "create", "edit", "delete", "publish", "approve"],
+        "inbox": ["view", "create", "edit", "send", "approve"],
+        "clients": ["view", "create", "edit", "delete", "approve"],
+        "email": ["view", "create", "edit", "delete", "send", "approve"],
+        "ai": ["view", "create", "edit", "approve"],
+        "settings": ["view", "edit"]
+      }
+    },
+    "member": {
+      "label": "Team Member",
+      "description": "Assigned modules only. Cannot change critical organization or security settings.",
+      "modules": {
+        "dashboard": ["view"],
+        "social": ["view", "create", "edit"],
+        "content": ["view", "create", "edit"],
+        "inbox": ["view", "create", "edit"],
+        "clients": ["view", "create", "edit"],
+        "email": ["view", "create", "edit"],
+        "ai": ["view", "create"],
+        "settings": ["view"]
+      }
+    },
+    "client": {
+      "label": "Client",
+      "description": "Restricted workspace access. Assigned content and communication only. No internal settings.",
+      "modules": {
+        "dashboard": ["view"],
+        "content": ["view"],
+        "inbox": ["view"],
+        "clients": ["view"],
+        "email": ["view"],
+        "ai": ["view"]
+      }
+    }
+  },
+  "notes": [
+    "AI uses the same authorization boundaries as users (PDF #12 §15).",
+    "AI cannot grant itself access (PDF #08 §7, PDF #12 §9).",
+    "Client/resource access must be organization-scoped (PDF #12 §15)."
+  ]
+}

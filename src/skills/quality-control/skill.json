@@ -1,0 +1,12 @@
+{
+  "id": "quality-control",
+  "name": "Quality Control",
+  "description": "Applies the quality rubric to Manager output: evidence presence, claim labelling, uncertainty surfacing, medical safety, action honesty and deliverable completeness. Blocking findings prevent delivery.",
+  "workTypes": ["quality_control", "business_operations"],
+  "modules": ["ai", "dashboard"],
+  "tools": ["run_quality_check", "log_activity", "create_notification"],
+  "knowledge": ["quality-rubric.json", "claim-policy.json", "medical-safety.json"],
+  "outputs": ["quality_report"],
+  "maxRisk": "low",
+  "version": "1.0"
+}
