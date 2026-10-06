@@ -1,46 +1,42 @@
 import { serverEnv } from '@/lib/env';
+import { CommandIcon, ShieldCheckIcon } from '@/components/ui/icons';
 
-/**
- * Honest configuration state (CEO spec §11: no fake database success).
- * Shown when Supabase is not configured and no dev identity is enabled.
- */
+/** Honest setup state: no fake database or authentication success is shown. */
 export function ConfigurationRequired({ reason }: { reason: string }) {
   const env = serverEnv();
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-8">
-      <div className="card max-w-2xl">
-        <p className="text-xs uppercase tracking-[0.2em] text-brand-300">Nibrexo OS AI</p>
-        <h1 className="mt-2 text-2xl font-semibold text-white">Backend not configured</h1>
-        <p className="mt-3 text-sm text-slate-300">{reason}</p>
+    <main className="flex min-h-screen items-center justify-center p-5 sm:p-8">
+      <div className="card w-full max-w-2xl p-6 sm:p-8">
+        <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-brand-300/20 bg-brand-400/10 text-brand-200">
+          <CommandIcon size={19} />
+        </span>
+        <p className="mt-5 page-eyebrow">NIBREXO CEO OPERATING COCKPIT</p>
+        <h1 className="mt-2 text-2xl font-semibold tracking-[-0.025em] text-white">Backend not configured</h1>
+        <p className="mt-3 text-sm leading-6 text-slate-300">{reason}</p>
 
-        <div className="mt-6 space-y-3 text-sm text-slate-400">
-          <p>To run the full product, set the Supabase environment variables:</p>
-          <ul className="ml-5 list-disc space-y-1 font-mono text-xs text-slate-300">
+        <div className="mt-6 rounded-xl border border-surface-border bg-surface/45 p-4">
+          <p className="text-sm font-medium text-slate-200">To run the full product, configure Supabase:</p>
+          <ul className="mt-3 space-y-1.5 font-mono text-xs leading-5 text-slate-400">
             <li>NEXT_PUBLIC_SUPABASE_URL</li>
             <li>NEXT_PUBLIC_SUPABASE_ANON_KEY</li>
-            <li>SUPABASE_SERVICE_ROLE_KEY (server-side jobs only)</li>
+            <li>SUPABASE_SERVICE_ROLE_KEY <span className="font-sans text-slate-500">(server-side jobs only)</span></li>
           </ul>
-          <p>
-            For local development without Supabase, set{' '}
-            <span className="font-mono text-slate-200">NIBREXO_DATA_BACKEND=memory</span> and{' '}
-            <span className="font-mono text-slate-200">NIBREXO_DEV_AUTH=1</span>. The in-memory
-            backend is refused in production.
-          </p>
         </div>
 
-        <dl className="mt-6 grid grid-cols-2 gap-3 text-sm">
-          <div className="rounded-lg border border-surface-border p-3">
-            <dt className="text-xs text-slate-500">Supabase</dt>
-            <dd className={env.supabaseConfigured ? 'text-emerald-300' : 'text-amber-300'}>
-              {env.supabaseConfigured ? 'configured' : 'not configured'}
-            </dd>
+        <p className="mt-4 text-sm leading-6 text-slate-400">
+          For local development only, set <span className="font-mono text-slate-300">NIBREXO_DATA_BACKEND=memory</span> and{' '}
+          <span className="font-mono text-slate-300">NIBREXO_DEV_AUTH=1</span>. The in-memory backend is refused in production.
+        </p>
+
+        <dl className="mt-6 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-surface-border bg-surface/35 p-3.5">
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">Supabase</dt>
+            <dd className={`mt-2 flex items-center gap-2 text-sm font-medium ${env.supabaseConfigured ? 'text-emerald-200' : 'text-amber-200'}`}><ShieldCheckIcon size={15} />{env.supabaseConfigured ? 'Configured' : 'Not configured'}</dd>
           </div>
-          <div className="rounded-lg border border-surface-border p-3">
-            <dt className="text-xs text-slate-500">AI provider</dt>
-            <dd className={env.aiEnabled ? 'text-emerald-300' : 'text-amber-300'}>
-              {env.aiEnabled ? env.aiModel : 'not configured'}
-            </dd>
+          <div className="rounded-xl border border-surface-border bg-surface/35 p-3.5">
+            <dt className="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500">AI provider</dt>
+            <dd className={`mt-2 text-sm font-medium ${env.aiEnabled ? 'text-emerald-200' : 'text-amber-200'}`}>{env.aiEnabled ? env.aiModel : 'Not configured'}</dd>
           </div>
         </dl>
       </div>

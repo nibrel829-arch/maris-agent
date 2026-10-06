@@ -20,10 +20,10 @@ export const POST = withApiContext(async ({ actor, repo }, _request, extra) => {
   const snapshot = await resumeManagerTask({ taskId, actor, repo });
 
   await writeAudit(repo, actor, {
-    action: 'manager.task.created',
+    action: 'manager.task.resumed',
     entityType: 'manager_task',
     entityId: taskId,
-    metadata: { resumed: true, state: snapshot.state },
+    metadata: { state: snapshot.state },
   });
 
   return { ok: true as const, data: snapshot };

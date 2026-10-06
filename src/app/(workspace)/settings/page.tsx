@@ -1,4 +1,6 @@
 import { Badge, Card, KeyValue } from '@/components/ui/primitives';
+import { PageHeader } from '@/components/cockpit/PageHeader';
+import { SignOutButton } from '@/features/auth/SignOutButton';
 import { resolveActor } from '@/server/auth/actor';
 import { actionsFor, roleLabel } from '@/server/auth/permissions';
 import { publicEnv, serverEnv } from '@/lib/env';
@@ -34,12 +36,11 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-white">Settings</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Runtime configuration and effective permissions. Secret values are never displayed.
-        </p>
-      </div>
+      <PageHeader
+        description="Runtime configuration and effective permissions. Secret values are never displayed in the workspace."
+        title="Settings"
+        actions={!actor.isDevIdentity && env.supabaseConfigured ? <SignOutButton /> : undefined}
+      />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card

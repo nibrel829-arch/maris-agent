@@ -3,48 +3,143 @@
 @tailwind utilities;
 
 :root {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: ui-sans-serif, Inter, ui-rounded, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  color-scheme: dark;
 }
 
 html,
 body {
-  height: 100%;
+  min-height: 100%;
+}
+
+html {
+  background: #09101f;
 }
 
 body {
   @apply bg-surface text-slate-100 antialiased;
+  background-image:
+    radial-gradient(circle at 92% -10%, rgba(45, 103, 216, 0.13), transparent 26rem),
+    radial-gradient(circle at -10% 100%, rgba(20, 132, 112, 0.08), transparent 28rem);
+}
+
+* {
+  border-color: #25324d;
+}
+
+::selection {
+  background: rgba(78, 139, 255, 0.38);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid #75a7ff;
+  outline-offset: 3px;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::-webkit-scrollbar {
+  height: 9px;
+  width: 9px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #34435f;
+  border: 2px solid #0d1526;
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 @layer components {
-  .card {
-    @apply rounded-xl border border-surface-border bg-surface-raised p-5;
+  .card,
+  .panel {
+    @apply rounded-2xl border border-surface-border bg-surface-raised/90 p-5 shadow-[0_12px_30px_rgba(0,0,0,0.12)];
+  }
+
+  .panel-subtle {
+    @apply rounded-xl border border-surface-border/80 bg-surface/60;
   }
 
   .card-title {
-    @apply text-sm font-semibold uppercase tracking-wide text-slate-400;
+    @apply text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400;
+  }
+
+  .page-eyebrow {
+    @apply text-[10px] font-semibold uppercase tracking-[0.2em] text-brand-300;
+  }
+
+  .page-title {
+    @apply mt-2 text-2xl font-semibold tracking-[-0.025em] text-white sm:text-3xl;
+  }
+
+  .page-description {
+    @apply mt-2 max-w-2xl text-sm leading-6 text-slate-400;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition duration-150 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-primary {
-    @apply btn bg-brand-600 text-white hover:bg-brand-500;
+    @apply btn bg-brand-500 text-white shadow-[0_8px_18px_rgba(27,92,245,0.2)] hover:bg-brand-400 active:bg-brand-600;
   }
 
   .btn-secondary {
-    @apply btn border border-surface-border bg-surface text-slate-200 hover:border-brand-500;
+    @apply btn border border-surface-border bg-surface-raised/70 text-slate-200 hover:border-slate-500 hover:bg-[#1a243b];
+  }
+
+  .btn-ghost {
+    @apply btn px-3 text-slate-300 hover:bg-surface-raised hover:text-white;
   }
 
   .btn-danger {
-    @apply btn border border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20;
+    @apply btn border border-red-400/30 bg-red-500/10 text-red-200 hover:bg-red-500/20;
+  }
+
+  .icon-button {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-xl border border-surface-border text-slate-300 transition hover:border-slate-500 hover:bg-surface-raised hover:text-white;
   }
 
   .input {
-    @apply w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-brand-500 focus:outline-none;
+    @apply w-full rounded-xl border border-surface-border bg-[#0a1324]/90 px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 transition focus:border-brand-400 focus:outline-none focus:ring-2 focus:ring-brand-500/15;
   }
 
   .badge {
-    @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium;
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium leading-none;
+  }
+
+  .status-dot {
+    @apply h-1.5 w-1.5 rounded-full;
+  }
+
+  .empty-state {
+    @apply rounded-xl border border-dashed border-surface-border bg-surface/35 px-5 py-8 text-center;
+  }
+
+  .empty-state-icon {
+    @apply mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-surface-border bg-surface-raised text-brand-300;
+  }
+
+  .table-header {
+    @apply border-b border-surface-border text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500;
+  }
+
+  .table-row {
+    @apply border-b border-surface-border/60 transition last:border-0 hover:bg-white/[0.018];
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-lg bg-slate-700/25;
   }
 }

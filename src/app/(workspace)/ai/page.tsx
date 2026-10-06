@@ -1,8 +1,6 @@
-import { ManagerWorkspace } from '@/features/manager/ManagerWorkspace';
-import { listSkills } from '@/server/manager/skill-registry';
+import { redirect } from 'next/navigation';
 
-export const dynamic = 'force-dynamic';
-
-export default function ManagerPage() {
-  return <ManagerWorkspace skills={listSkills()} />;
+/** Legacy route preserved for existing links. */
+export default function LegacyManagerPage() {
+  redirect('/manager');
 }

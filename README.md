@@ -35,10 +35,13 @@ written to a disposable store.
 ### Running with Supabase
 
 1. Create a Supabase project.
-2. Apply the migrations in order:
+2. Link the attached project, then apply the migrations in order:
    ```bash
-   supabase db push            # or apply supabase/migrations/*.sql in order
+   supabase link --project-ref <your-project-ref>
+   supabase db push
+   supabase migration list
    ```
+   The current migration set is `0001` through `0005`; `0005` hardens RLS policies after the original four migrations.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
 4. For server-side jobs only, set `SUPABASE_SERVICE_ROLE_KEY` (server-side secret).
 5. Create a profile and membership row for your user.
@@ -71,7 +74,7 @@ skills/<id>/            Agent-Skills-compliant skill definitions (SKILL.md + ref
                         — 11 skills as capabilities of ONE central Manager.
 src/
   app/
-    (workspace)/        dashboard · ai · clients · content · social · inbox · emails · settings
+    (workspace)/        dashboard · manager · priorities · approvals · activity · research · product · leads · marketing · reports · operations
     api/
       health/           configuration + integration status
       manager/          tasks, resume, skills, approvals
@@ -92,9 +95,9 @@ src/
                         product framework, quality rubric, brand voice, README
   config/               permissions.json, approval-policy.json
   types/                domain and Manager types
-supabase/migrations/    0001 identity · 0002 modules · 0003 manager · 0004 RLS
+supabase/migrations/    0001 identity · 0002 modules · 0003 manager · 0004 RLS · 0005 RLS hardening
 tests/                  unit + integration suites
-docs/                   V2 spec, architecture, phase audit
+docs/                   V2 spec, architecture, phase audit, Supabase verification runbook
 ```
 
 ---
@@ -137,10 +140,12 @@ curl -X POST http://localhost:3000/api/manager/tasks/<taskId>/resume
 
 ## What is implemented, and what is not
 
-**Implemented and verified by tests:** the full Manager pipeline, 11 skills,
+**Implemented and covered by repository tests:** the full Manager pipeline, 11 skills,
 31 registered tools, permission guard, approval lifecycle, verifier, quality
 rubric, medical safety screening, audit logging, tenant-scoped schema with RLS,
-and the dashboard/Manager/settings UI.
+and the CEO cockpit/Manager workspace UI. Remote Supabase Auth and RLS still
+require the live-project verification runbook in `docs/SUPABASE_VERIFICATION.md`
+before the deployment can be described as production-ready.
 
 **Deliberately reported as unavailable rather than simulated:**
 

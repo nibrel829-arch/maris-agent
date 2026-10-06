@@ -19,6 +19,10 @@ coverage/
 .env.production.local
 !.env.example
 
+# Supabase CLI runtime metadata (project linkage stays local)
+supabase/.temp/
+.supabase/
+
 # misc
 .DS_Store
 *.pem

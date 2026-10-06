@@ -2,9 +2,9 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Nibrexo OS AI — CEO / Manager Agent',
+  title: 'Nibrexo — CEO Operating Cockpit',
   description:
-    'One central autonomous Manager for Nibrexo: strategy, research, product, content, marketing, sales, operations and quality control.',
+    'Nibrexo’s personal CEO operating cockpit: one central Manager for priorities, research, product, marketing, operations and quality control.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

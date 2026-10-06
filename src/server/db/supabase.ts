@@ -1,27 +1,20 @@
 /**
  * Supabase client factories (PDF #12 §4, PDF #11 §6).
  *
- * - Browser client uses the anon key only. It can never read privileged data
- *   because RLS is the boundary.
+ * - The browser-only factory lives in `src/lib/supabase-browser.ts` and uses
+ *   the anon key only. RLS remains the database boundary.
  * - Server client is bound to the caller's session cookies, so RLS applies.
  * - Admin client uses the service role key and is reserved for server-side job
  *   execution. It is never constructed in a request that can be influenced by
  *   a browser.
  */
 
-import { createBrowserClient } from '@supabase/ssr';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { createServerClient as createSsrServerClient } from '@supabase/ssr';
 import { publicEnv, serverEnv } from '@/lib/env';
 
 export type NibrexoSupabaseClient = SupabaseClient;
-
-export function createSupabaseBrowserClient(): NibrexoSupabaseClient | null {
-  const env = publicEnv();
-  if (!env.supabaseConfigured) return null;
-  return createBrowserClient(env.supabaseUrl as string, env.supabaseAnonKey as string);
-}
 
 export async function createSupabaseServerClient(): Promise<NibrexoSupabaseClient | null> {
   const env = publicEnv();

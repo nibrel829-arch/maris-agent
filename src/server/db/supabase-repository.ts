@@ -14,10 +14,15 @@ import type { BaseRow, Collection, NibrexoRepository } from './types';
 
 const DEFAULT_LIMIT = 100;
 
+/** Tables that intentionally have an immutable append-only audit shape. */
+const TABLES_WITHOUT_UPDATED_AT = new Set(['activity_logs']);
+
 function createCollection<T extends BaseRow>(
   client: SupabaseClient,
   table: string,
 ): Collection<T> {
+  const supportsUpdatedAt = !TABLES_WITHOUT_UPDATED_AT.has(table);
+
   return {
     async list(organizationId, options = {}) {
       const limit = options.limit ?? DEFAULT_LIMIT;
@@ -38,7 +43,7 @@ function createCollection<T extends BaseRow>(
         ...(row as Record<string, unknown>),
         id: (row as { id?: UUID }).id ?? newId(),
         created_at: (row as { created_at?: string }).created_at ?? new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        ...(supportsUpdatedAt ? { updated_at: new Date().toISOString() } : {}),
       };
       const { data, error } = await client.from(table).insert(payload).select().single();
       if (error) throw new Error(`Supabase insert failed for ${table}: ${error.message}`);
@@ -46,9 +51,13 @@ function createCollection<T extends BaseRow>(
     },
 
     async update(id, organizationId, patch) {
+      const payload: Record<string, unknown> = {
+        ...(patch as Record<string, unknown>),
+        ...(supportsUpdatedAt ? { updated_at: new Date().toISOString() } : {}),
+      };
       const { data, error } = await client
         .from(table)
-        .update({ ...(patch as Record<string, unknown>), updated_at: new Date().toISOString() })
+        .update(payload)
         .eq('id', id)
         .eq('organization_id', organizationId)
         .select()
