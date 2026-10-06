@@ -95,9 +95,21 @@ recorded inside `ai_tasks.trace` as ordered stage entries.
 | `quality-control` | Quality rubric enforcement | low |
 | `business-reporting` | Operational reports and metrics | low |
 
-Skill definitions live in `src/skills/<id>/skill.json` and are validated at
-module load. A skill may only reference tools that exist in the tool registry;
-`validateRegistry()` fails the build if it does not.
+Skill definitions live in two complementary places (Phase 02 compliance):
+
+- **Agent Skills specification (authoritative external representation):**
+  `skills/<id>/SKILL.md` with YAML frontmatter. The `name` field matches the
+  directory name. Each SKILL.md is concise and describes when the skill should
+  be used; detailed supporting material lives under `skills/<id>/references/`.
+- **Runtime registry (consumed by the orchestrator):** `src/skills/<id>/skill.json`
+  is imported by `src/server/manager/skill-registry.ts`, validated against the
+  Zod schema at module load, and must not diverge from the SKILL.md frontmatter.
+  A skill may only reference tools that exist in the tool registry;
+  `validateRegistry()` fails the build if it does not.
+
+The 11 SKILL.md directories are capabilities of ONE central Manager. They are
+not 11 autonomous agents; no skill can self-initiate work or bypass the
+Manager pipeline.
 
 ---
 

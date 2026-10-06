@@ -30,7 +30,9 @@ AUDIT / LOGGING (activity_logs, ai_actions)
 | Orchestrator | `server/manager/orchestrator.ts` | Owns the whole lifecycle; the only entry point |
 | Understand / Classify | `server/manager/understand.ts` | Parse objective, entities, gaps; classify work type |
 | Planner | `server/manager/planner.ts` | Build the plan and select skills |
-| Skill registry | `server/manager/skill-registry.ts` | Validate and expose the 11 skills |
+| Agent Skills (spec) | `skills/*/SKILL.md` | Authoritative external skill definitions with YAML frontmatter (Phase 02) |
+| Skill references | `skills/*/references/*.md` | Supporting material per skill (dental safety, outreach rules, etc.) |
+| Skill registry (runtime) | `server/manager/skill-registry.ts` | Loads `src/skills/*/skill.json`, validates, exposes to the orchestrator |
 | Tool registry | `server/manager/tool-registry.ts` | Explicit schemas and permissions |
 | Input resolver | `server/manager/input-resolver.ts` | Chain step outputs into later step inputs |
 | Approval policy | `server/manager/approval-policy.ts` | Risk → approval decision |
@@ -39,7 +41,8 @@ AUDIT / LOGGING (activity_logs, ai_actions)
 | Audit logger | `server/manager/audit.ts` | Record every important action |
 
 Only `runManagerTask` and `resumeManagerTask` start work. No skill, tool or
-adapter can self-initiate.
+adapter can self-initiate. The 11 directories under `skills/` are
+capabilities of the ONE Manager; they are not 11 autonomous agents.
 
 ## 3. Decision log — conflicts and resolutions
 
