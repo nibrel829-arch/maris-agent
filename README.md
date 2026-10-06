@@ -67,6 +67,8 @@ it never emulates a model response.
 ## Repository structure
 
 ```
+skills/<id>/            Agent-Skills-compliant skill definitions (SKILL.md + references/)
+                        — 11 skills as capabilities of ONE central Manager.
 src/
   app/
     (workspace)/        dashboard · ai · clients · content · social · inbox · emails · settings
@@ -85,14 +87,14 @@ src/
     integrations/       email provider and social platform adapters
     auth/               actor resolution and permission guard
     db/                 repository contract, Supabase + memory implementations
-  skills/<id>/skill.json    11 skill definitions
+  skills/<id>/skill.json    11 runtime skill definitions imported by the registry
   knowledge/            claim policy, medical safety, research standards,
-                        product framework, quality rubric, brand voice
+                        product framework, quality rubric, brand voice, README
   config/               permissions.json, approval-policy.json
   types/                domain and Manager types
 supabase/migrations/    0001 identity · 0002 modules · 0003 manager · 0004 RLS
 tests/                  unit + integration suites
-docs/                   V2 spec, architecture
+docs/                   V2 spec, architecture, phase audit
 ```
 
 ---
