@@ -57,18 +57,28 @@ Expected result: all five migrations appear as applied in order.
 
 ### 2. Configure the application
 
-Set these values in the deployment environment (not source control):
+Set these values in the **Production** deployment environment (not source control):
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=<project-url>
+# Use one public key name. The current Vercel/Supabase integration normally supplies this:
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<publishable-key>
+# Legacy projects may use this instead:
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon-key>
-SUPABASE_SERVICE_ROLE_KEY=<server-only-key> # jobs only
+
+# Server-only privileged jobs: one of these names is sufficient.
+SUPABASE_SECRET_KEY=<server-only-secret-key>
+# or legacy SUPABASE_SERVICE_ROLE_KEY=<server-only-service-role-key>
+
 NIBREXO_DATA_BACKEND=supabase
 NIBREXO_DEV_AUTH=0
 ```
 
-Start the app and confirm `/api/health` reports `dataBackend: "supabase"` and
-`configuration.supabase: true`. It must never report `memory` in production.
+Redeploy after changing Production variables: Vercel builds snapshot `NEXT_PUBLIC_` values at
+build time. Confirm `/api/health` reports `dataBackend: "supabase"`,
+`configuration.supabase: true`, and `supabasePublicKeySource` as the expected variable name.
+The endpoint returns names/statuses only, never URLs or key material. It must never report
+`memory` in production.
 
 ### 3. Auth and organization identity
 

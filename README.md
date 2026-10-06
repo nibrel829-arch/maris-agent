@@ -42,8 +42,8 @@ written to a disposable store.
    supabase migration list
    ```
    The current migration set is `0001` through `0005`; `0005` hardens RLS policies after the original four migrations.
-3. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`.
-4. For server-side jobs only, set `SUPABASE_SERVICE_ROLE_KEY` (server-side secret).
+3. Set `NEXT_PUBLIC_SUPABASE_URL` and either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (current Supabase/Vercel integration) or `NEXT_PUBLIC_SUPABASE_ANON_KEY` (legacy).
+4. For server-side jobs only, set `SUPABASE_SECRET_KEY` (current) or `SUPABASE_SERVICE_ROLE_KEY` (legacy); both remain server-only secrets.
 5. Create a profile and membership row for your user.
 
 ### Enabling the AI layer

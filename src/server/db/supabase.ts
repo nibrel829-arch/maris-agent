@@ -2,7 +2,7 @@
  * Supabase client factories (PDF #12 §4, PDF #11 §6).
  *
  * - The browser-only factory lives in `src/lib/supabase-browser.ts` and uses
- *   the anon key only. RLS remains the database boundary.
+ *   the public publishable/legacy-anon key only. RLS remains the database boundary.
  * - Server client is bound to the caller's session cookies, so RLS applies.
  * - Admin client uses the service role key and is reserved for server-side job
  *   execution. It is never constructed in a request that can be influenced by
