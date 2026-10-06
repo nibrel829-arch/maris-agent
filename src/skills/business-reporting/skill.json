@@ -1,0 +1,12 @@
+{
+  "id": "business-reporting",
+  "name": "Business Reporting",
+  "description": "Aggregates real recorded activity into operational reports and decision memos. Reports only contain data that exists in the workspace; missing data is reported as missing, never estimated or invented.",
+  "workTypes": ["reporting", "business_operations", "decision_making"],
+  "modules": ["dashboard", "ai", "clients", "email"],
+  "tools": ["build_business_report", "list_clients", "list_leads", "list_content_items", "list_email_templates", "create_notification"],
+  "knowledge": ["claim-policy.json", "brand-voice.json"],
+  "outputs": ["business_report", "decision_memo"],
+  "maxRisk": "low",
+  "version": "1.0"
+}

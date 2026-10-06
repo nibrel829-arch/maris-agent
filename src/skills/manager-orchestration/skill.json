@@ -1,0 +1,12 @@
+{
+  "id": "manager-orchestration",
+  "name": "Manager Orchestration",
+  "description": "The central coordination capability of the NIBREXO CEO / Manager. Understands a request, classifies it, plans the work, selects and sequences skills, verifies results, runs quality control and determines the next best action. This skill is the Manager itself, not a separate agent.",
+  "workTypes": ["strategy", "decision_making", "business_operations", "general_orchestration", "memory_continuity"],
+  "modules": ["dashboard", "ai", "settings"],
+  "tools": ["get_settings", "log_activity", "create_notification", "record_memory", "recall_memory", "create_decision_memo"],
+  "knowledge": ["brand-voice.json", "quality-rubric.json"],
+  "outputs": ["decision_memo", "business_report", "direct_answer"],
+  "maxRisk": "medium",
+  "version": "1.0"
+}

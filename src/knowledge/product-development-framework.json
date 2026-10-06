@@ -1,0 +1,30 @@
+{
+  "version": "1.0",
+  "source": "CEO spec §7 Autonomy Principle (product request reasoning chain)",
+  "reasoningChain": [
+    "target_customer",
+    "customer_problem",
+    "demand",
+    "existing_alternatives",
+    "missing_opportunity",
+    "product_concept",
+    "product_scope",
+    "components",
+    "versions",
+    "file_types",
+    "usage",
+    "differentiation",
+    "pricing_considerations",
+    "marketing",
+    "sales",
+    "quality_control"
+  ],
+  "rules": [
+    "Every element of the reasoning chain must be addressed or explicitly recorded as an open question.",
+    "Demand must be described as a signal with a source, never as an invented statistic.",
+    "Pricing must be presented as a consideration with assumptions, never as a confirmed market price.",
+    "Missing information becomes an open question, not a fabricated answer."
+  ],
+  "defaultVersions": ["v0.1 draft", "v1.0 core", "v1.1 refined"],
+  "commonFileTypes": ["PDF", "DOCX", "XLSX", "PPTX", "PNG/SVG", "JSON", "Notion/Markdown"]
+}

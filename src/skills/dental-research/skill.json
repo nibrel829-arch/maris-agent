@@ -1,0 +1,12 @@
+{
+  "id": "dental-research",
+  "name": "Dental Research",
+  "description": "Dental and clinical-adjacent research under additional safety controls. Requires sourced evidence, flags output for professional review, and never diagnoses, prescribes or claims clinical outcomes.",
+  "workTypes": ["dental_research", "research"],
+  "modules": ["ai", "dashboard"],
+  "tools": ["create_research_brief", "add_research_evidence", "run_medical_safety_check", "list_research_briefs"],
+  "knowledge": ["medical-safety.json", "research-standards.json", "claim-policy.json"],
+  "outputs": ["research_brief"],
+  "maxRisk": "medium",
+  "version": "1.0"
+}

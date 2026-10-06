@@ -1,0 +1,12 @@
+{
+  "id": "content-marketing",
+  "name": "Content Marketing",
+  "description": "Creates and manages content assets and marketing campaign plans. Drafts captions, long-form content and campaign structures; publishing always goes through platform validation and the approval engine.",
+  "workTypes": ["content", "marketing", "strategy"],
+  "modules": ["content", "social", "ai"],
+  "tools": ["create_content_item", "update_content_item", "list_content_items", "generate_caption", "create_campaign_plan", "list_campaign_plans"],
+  "knowledge": ["brand-voice.json", "claim-policy.json"],
+  "outputs": ["content_draft", "campaign_plan"],
+  "maxRisk": "medium",
+  "version": "1.0"
+}

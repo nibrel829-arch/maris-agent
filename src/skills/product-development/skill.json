@@ -1,0 +1,12 @@
+{
+  "id": "product-development",
+  "name": "Product Development",
+  "description": "Turns a product request into a structured concept by reasoning through target customer, problem, demand signal, existing alternatives, missing opportunity, scope, components, versions, file types, usage, differentiation, pricing considerations, go-to-market and quality control.",
+  "workTypes": ["product_development", "strategy"],
+  "modules": ["ai", "content"],
+  "tools": ["create_product_concept", "list_product_concepts", "create_research_brief", "log_activity"],
+  "knowledge": ["product-development-framework.json", "claim-policy.json"],
+  "outputs": ["product_concept"],
+  "maxRisk": "low",
+  "version": "1.0"
+}

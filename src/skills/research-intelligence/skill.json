@@ -1,0 +1,12 @@
+{
+  "id": "research-intelligence",
+  "name": "Research Intelligence",
+  "description": "Structures research, defines evidence requirements, records sourced findings, separates FACT / EVIDENCE / INTERPRETATION / RECOMMENDATION and surfaces uncertainty. Never invents statistics, sources, companies or market demand.",
+  "workTypes": ["research", "strategy", "market", "decision_making"],
+  "modules": ["ai", "dashboard"],
+  "tools": ["create_research_brief", "add_research_evidence", "list_research_briefs", "log_activity"],
+  "knowledge": ["research-standards.json", "claim-policy.json"],
+  "outputs": ["research_brief"],
+  "maxRisk": "low",
+  "version": "1.0"
+}
