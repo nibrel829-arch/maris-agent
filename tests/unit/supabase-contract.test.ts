@@ -7,7 +7,7 @@ const migrationsDir = resolve(root, 'supabase/migrations');
 const migration = (name: string) => readFileSync(resolve(migrationsDir, name), 'utf8');
 
 describe('Supabase migration contract', () => {
-  it('keeps the baseline migrations in order with hardening and CRM follow-ups', () => {
+  it('keeps the baseline migrations in order with hardening, CRM and storage follow-ups', () => {
     const names = readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')).sort();
     expect(names).toEqual([
       '0001_core_identity.sql',
@@ -16,6 +16,7 @@ describe('Supabase migration contract', () => {
       '0004_rls_policies.sql',
       '0005_rls_hardening.sql',
       '0006_clients_crm.sql',
+      '0007_content_storage.sql',
     ]);
   });
 
@@ -80,6 +81,24 @@ describe('Supabase migration contract', () => {
         );
       }
     }
+  });
+
+  it('creates the private media bucket with organization-scoped storage RLS', () => {
+    const storage = migration('0007_content_storage.sql');
+    expect(storage).toContain('insert into storage.buckets');
+    expect(storage).toContain("'nibrexo-media'");
+    expect(storage).toContain('false,');
+    expect(storage).toContain('on conflict (id) do update');
+    expect(storage).toContain('nibrexo_media_member_select');
+    expect(storage).toContain('nibrexo_media_member_insert');
+    expect(storage).toContain('nibrexo_media_member_update');
+    expect(storage).toContain('nibrexo_media_admin_delete');
+    expect(storage).toContain('public.is_org_member');
+    expect(storage).toContain('public.is_org_admin');
+    expect(storage).toContain('storage.foldername(name)');
+    // Guarded for databases without the Supabase storage schema (PGlite).
+    expect(storage).toContain("to_regclass('storage.buckets')");
+    expect(storage).toContain("to_regclass('storage.objects')");
   });
 
   it('never deletes data in any migration', () => {

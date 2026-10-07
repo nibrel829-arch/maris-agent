@@ -59,7 +59,7 @@ const NAVIGATION: NavGroup[] = [
       { href: '/research', label: 'Research', module: 'ai', icon: SearchIcon },
       { href: '/product', label: 'Product', module: 'ai', icon: LightbulbIcon },
       { href: '/leads', label: 'Leads', module: 'clients', icon: UserGroupIcon },
-      { href: '/marketing', label: 'Marketing', module: 'content', icon: LayersIcon },
+      { href: '/content', label: 'Content', module: 'content', icon: LayersIcon },
       { href: '/reports', label: 'Business reporting', module: 'ai', icon: TrendIcon },
     ],
   },

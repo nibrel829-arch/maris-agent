@@ -16,6 +16,7 @@ import type {
   ActivityLog,
   ApprovalRecord,
   Client,
+  MediaFile,
   ClientActivity,
   ContentItem,
   EmailLog,
@@ -50,6 +51,8 @@ export interface Collection<T extends BaseRow> {
   ): Promise<T>;
   update(id: UUID, organizationId: UUID, patch: Partial<T>): Promise<T | null>;
   get(id: UUID, organizationId: UUID): Promise<T | null>;
+  /** Tenant-scoped delete. Resolves true only when a row was removed. */
+  delete(id: UUID, organizationId: UUID): Promise<boolean>;
 }
 
 export interface CampaignPlan extends BaseRow {
@@ -124,6 +127,7 @@ export interface NibrexoRepository {
 
   clients: Collection<Client>;
   clientActivity: Collection<ClientActivity>;
+  mediaFiles: Collection<MediaFile>;
   leads: Collection<Lead>;
   contentItems: Collection<ContentItem>;
   emailTemplates: Collection<EmailTemplate>;

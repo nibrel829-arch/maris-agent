@@ -70,6 +70,13 @@ function createCollection<T extends BaseRow>(store: Store, table: string): Colle
       if (!existing || !matches(existing, organizationId)) return null;
       return existing as unknown as T;
     },
+
+    async delete(id, organizationId) {
+      const existing = tableStore().get(id);
+      if (!existing || !matches(existing, organizationId)) return false;
+      tableStore().delete(id);
+      return true;
+    },
   };
 }
 
@@ -88,6 +95,7 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
   const tables = [
     'clients',
     'client_activity',
+    'media_files',
     'leads',
     'content_items',
     'email_templates',
@@ -115,6 +123,7 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
 
     clients: collection('clients'),
     clientActivity: collection('client_activity'),
+    mediaFiles: collection('media_files'),
     leads: collection('leads'),
     contentItems: collection('content_items'),
     emailTemplates: collection('email_templates'),

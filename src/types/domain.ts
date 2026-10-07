@@ -146,6 +146,17 @@ export type ContentStatus =
   | 'FAILED'
   | 'CANCELLED';
 
+export interface MediaFile {
+  id: UUID;
+  organization_id: UUID;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  created_by: UUID | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
 export interface ContentItem {
   id: UUID;
   organization_id: UUID;
@@ -316,6 +327,9 @@ export type ActivityAction =
   | 'lead.qualified'
   | 'content.created'
   | 'content.updated'
+  | 'content.deleted'
+  | 'media.uploaded'
+  | 'media.deleted'
   | 'email.prepared'
   | 'email.sent'
   | 'report.generated'

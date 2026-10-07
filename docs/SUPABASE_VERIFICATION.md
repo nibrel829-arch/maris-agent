@@ -50,10 +50,13 @@ Apply migrations in this exact order:
 4. `0004_rls_policies.sql`
 5. `0005_rls_hardening.sql`
 6. `0006_clients_crm.sql`
+7. `0007_content_storage.sql`
 
 `0005` is a corrective migration and must be applied after the original four migrations. Do
 not edit an already-applied migration in the live project to make these changes.
 `0006` is additive only (a nullable column, three enum values, one index) and leaves RLS untouched.
+`0007` creates the private `nibrexo-media` bucket and org-scoped storage policies; its blocks
+skip with a notice on databases without the Supabase `storage` schema.
 
 ## Live verification runbook
 
@@ -124,7 +127,7 @@ ERROR: 42704: type "public.org_role" does not exist
 `supabase/migrations/0001_core_identity.sql` (line 29), and `public.memberships.role` is
 typed as `public.org_role`. The bootstrap declares `v_role public.org_role` **because that is
 the repository's schema** — a `42704` there means the live project has no such type, so
-migration `0001` (and therefore `0002`–`0006`, which all reference `organizations`) has not
+migration `0001` (and therefore `0002`–`0007`, which all reference `organizations`) has not
 been applied to the project the app and the SQL Editor are pointed at. The repository has never
 been able to prove otherwise: `docs/SUPABASE_VERIFICATION.md` (2026-10-06) records that no
 project ref, public key or service key was ever available to it, so `supabase migration list` /
@@ -148,11 +151,11 @@ unmigrated project: `status = MISSING` for `public.org_role`, `public.organizati
 
 A partially applied project shows a mix; the rule is simply that **every row of Grid 1 must be
 `ok` before provisioning**. `public_enums` is a good single indicator: a fully applied
-`0001`–`0006` set creates 14 enums (`0001`: 2, `0002`: 7, `0003`: 5; `0006` adds enum *values*, not types).
+`0001`–`0007` set creates 14 enums (`0001`: 2, `0002`: 7, `0003`: 5; `0006` adds enum *values*, not types; `0007` only touches the storage schema).
 
 ### Remediation — apply the repository migrations, then re-run the bootstrap unchanged
 
-Nothing is deleted, no project is recreated, no object is created by hand. All six migrations
+Nothing is deleted, no project is recreated, no object is created by hand. All seven migrations
 are safely re-runnable: every `create table` / `create index` / `add column` is `if not exists`, every
 `create type` is guarded by a `pg_type` check, every `add value` is `if not exists`, and the only `drop` statements are
 `drop policy if exists` (policy metadata, never rows). `0004`/`0005` only add RLS policies and
@@ -163,23 +166,23 @@ immutability triggers, so applying them strengthens security and cannot weaken R
 ```bash
 supabase login                      # browser flow; no secret is pasted anywhere
 supabase link --project-ref <your-project-ref>
-supabase migration list              # local vs remote: shows 0001-0006 as not applied
-supabase db push                     # applies 0001 -> 0006 in order, records them
-supabase migration list              # expect all six applied
+supabase migration list              # local vs remote: shows 0001-0007 as not applied
+supabase db push                     # applies 0001 -> 0007 in order, records them
+supabase migration list              # expect all seven applied
 ```
 
 **Path B — SQL Editor, no CLI (single paste):**
 
 ```bash
-npm run db:sql     # writes ./all_migrations.sql: 0001 -> 0006, concatenated in order
+npm run db:sql     # writes ./all_migrations.sql: 0001 -> 0007, concatenated in order
 ```
 
 Paste that file into the SQL Editor and run it once. It is a generated concatenation of
 `supabase/migrations/*.sql` — the migration files remain the single source of truth, so it
 cannot drift from `supabase db push`; never edit the generated file. Alternatively paste the
-six files one at a time, in this order: `0001_core_identity.sql`, `0002_modules.sql`,
+seven files one at a time, in this order: `0001_core_identity.sql`, `0002_modules.sql`,
 `0003_manager_agent.sql`, `0004_rls_policies.sql`, `0005_rls_hardening.sql`,
-`0006_clients_crm.sql`.
+`0006_clients_crm.sql`, `0007_content_storage.sql`.
 
 Either way, run `supabase/scripts/diagnose_schema.sql` again and confirm Grid 1 is entirely
 `ok`.

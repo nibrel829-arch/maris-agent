@@ -18,6 +18,7 @@ export const EXPECTED_MIGRATIONS = Object.freeze([
   '0004_rls_policies.sql',
   '0005_rls_hardening.sql',
   '0006_clients_crm.sql',
+  '0007_content_storage.sql',
 ]);
 
 /**

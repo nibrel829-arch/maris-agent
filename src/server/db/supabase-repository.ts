@@ -76,6 +76,17 @@ function createCollection<T extends BaseRow>(
       if (error) throw new Error(`Supabase read failed for ${table}: ${error.message}`);
       return (data as unknown as T) ?? null;
     },
+
+    async delete(id, organizationId) {
+      const { data, error } = await client
+        .from(table)
+        .delete()
+        .eq('id', id)
+        .eq('organization_id', organizationId)
+        .select('id');
+      if (error) throw new Error(`Supabase delete failed for ${table}: ${error.message}`);
+      return (data?.length ?? 0) > 0;
+    },
   };
 }
 
@@ -118,6 +129,7 @@ function fromSnapshot(task: ManagerTaskSnapshot): Record<string, unknown> {
 
 const COUNT_TABLES = [
   'clients',
+  'media_files',
   'leads',
   'content_items',
   'email_templates',
@@ -137,6 +149,7 @@ export function createSupabaseRepository(client: SupabaseClient): NibrexoReposit
 
     clients: collection('clients'),
     clientActivity: collection('client_activity'),
+    mediaFiles: collection('media_files'),
     leads: collection('leads'),
     contentItems: collection('content_items'),
     emailTemplates: collection('email_templates'),

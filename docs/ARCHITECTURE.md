@@ -74,6 +74,7 @@ write and update. Migrations live in `supabase/migrations/`:
 | `0004_rls_policies.sql` | RLS on every tenant table; destructive writes restricted to owner/admin |
 | `0005_rls_hardening.sql` | RLS hardening: tenant-identity immutability, append-only audit, requester/admin task and credential boundaries |
 | `0006_clients_crm.sql` | Phase 5 CRM: `clients.phone`, `prospect`/`inactive`/`completed` statuses, activity index (RLS unchanged) |
+| `0007_content_storage.sql` | Phase 6 Content: private `nibrexo-media` bucket + org-scoped `storage.objects` RLS (guarded for non-Supabase databases) |
 
 ## 5. Security model
 
