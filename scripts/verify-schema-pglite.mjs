@@ -2,7 +2,7 @@
 /**
  * Database-level verification of the Nibrexo schema + owner bootstrap.
  *
- * Runs the real migrations (0001-0007) and the real
+ * Runs the real migrations (0001-0008) and the real
  * `supabase/scripts/provision_owner.sql` against an embedded PostgreSQL
  * (@electric-sql/pglite, PostgreSQL compiled to WASM) with a minimal
  * Supabase-compatible `auth` shim. It proves, without touching the live
@@ -155,6 +155,7 @@ for (const name of [
   '0005_rls_hardening.sql',
   '0006_clients_crm.sql',
   '0007_content_storage.sql',
+  '0008_social_connections.sql',
 ]) {
   await db.exec(migrationSql(readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')));
   console.log(`  ✓ applied ${name}`);

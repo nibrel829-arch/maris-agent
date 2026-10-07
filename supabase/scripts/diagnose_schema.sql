@@ -20,8 +20,8 @@
 -- HOW TO READ THE RESULT
 --   Grid 1 "REQUIRED OBJECTS"      every row must be `ok` before provisioning.
 --   Grid 2 "SCHEMA OBJECT COUNT"   overview; `public_enums` must be >= 1 for a
---                                  fully applied 0001-0007 set (14 enums total;
---                                  0006 adds enum *values*, not types; 0007 only
+--                                  fully applied 0001-0008 set (14 enums total;
+--                                  0006 adds enum *values*, not types; 0007 only touches storage, 0008 adds no types;
 --                                  touches the storage schema).
 --   Grid 3 "TABLES + RLS"          every Nibrexo tenant table needs rls_enabled
 --                                  = true and at least one policy.
@@ -106,6 +106,16 @@ from (
                     and column_name = 'phone'),
          'migrations/0006_clients_crm.sql'
   union all
+  select 'table', 'public.social_oauth_states',
+         to_regclass('public.social_oauth_states') is not null,
+         'migrations/0008_social_connections.sql'
+  union all
+  select 'column', 'public.social_credentials.access_token_encrypted',
+         exists (select 1 from information_schema.columns
+                  where table_schema = 'public' and table_name = 'social_credentials'
+                    and column_name = 'access_token_encrypted'),
+         'migrations/0008_social_connections.sql'
+  union all
   select 'table', 'public.ai_tasks',
          to_regclass('public.ai_tasks') is not null,
          'migrations/0003_manager_agent.sql'
@@ -117,9 +127,10 @@ from (
 order by (required.present) asc, required.object_kind, required.object_name;
 
 -- --------------------------------------------------------------------------
--- Grid 2 — overview counts. A fully applied 0001-0007 set creates 34 tables
+-- Grid 2 — overview counts. A fully applied 0001-0008 set creates 35 tables
 -- and 14 enums in `public` (0001: 2, 0002: 7, 0003: 5; 0006 adds enum values
--- and a column, not tables or types; 0007 only touches the storage schema).
+-- and a column, not tables or types; 0007 only touches the storage schema;
+-- 0008 adds one table and columns, no types).
 -- --------------------------------------------------------------------------
 select
   (select count(*)
@@ -192,7 +203,7 @@ begin
               and to_regclass('public.memberships') is not null;
 
   if not v_type or not v_tables then
-    raise notice 'ACTION REQUIRED: the Nibrexo schema is not applied to this project (% public enums). Apply supabase/migrations 0001 → 0007 in order, then re-run supabase/scripts/provision_owner.sql unchanged.', v_enums;
+    raise notice 'ACTION REQUIRED: the Nibrexo schema is not applied to this project (% public enums). Apply supabase/migrations 0001 → 0008 in order, then re-run supabase/scripts/provision_owner.sql unchanged.', v_enums;
     raise notice 'Do NOT create public.org_role or any Nibrexo table by hand: the migration is the single source of truth.';
   elsif v_enums >= 14 then
     raise notice 'SCHEMA OK: public.org_role and the identity tables exist (% public enums). Verify grids 1-3 are all ok, then run supabase/scripts/provision_owner.sql unchanged.', v_enums;
@@ -200,6 +211,6 @@ begin
         and not exists (select 1 from storage.buckets where id = 'nibrexo-media') then
     raise notice 'STORAGE ACTION: the schema is applied but the nibrexo-media bucket is missing. Apply supabase/migrations 0007_content_storage.sql, then re-run this script.';
   else
-    raise notice 'SCHEMA PARTIAL: the identity tables exist but only % of the 14 expected public enums are present. Re-apply 0002 → 0007 in order to finish (they are re-runnable).', v_enums;
+    raise notice 'SCHEMA PARTIAL: the identity tables exist but only % of the 14 expected public enums are present. Re-apply 0002 → 0008 in order to finish (they are re-runnable).', v_enums;
   end if;
 end $$;

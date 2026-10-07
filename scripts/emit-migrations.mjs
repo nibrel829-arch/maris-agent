@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Writes (or prints) the complete Nibrexo migration set 0001-0007 as one
+ * Writes (or prints) the complete Nibrexo migration set 0001-0008 as one
  * ordered script, for the Supabase SQL-Editor workflow where no CLI is used.
  *
  *   npm run db:sql                      # writes ./all_migrations.sql
@@ -50,7 +50,7 @@ function assertPureSql(sql, target) {
   if (lines.some((line) => line.startsWith('>'))) {
     throw new Error(`${target} contains shell/npm banner lines. Refusing to emit a non-SQL artifact.`);
   }
-  for (const name of ['0001_core_identity.sql', '0007_content_storage.sql']) {
+  for (const name of ['0001_core_identity.sql', '0008_social_connections.sql']) {
     if (!sql.includes(`-- ${name}`)) {
       throw new Error(`${target} is missing the ${name} section.`);
     }

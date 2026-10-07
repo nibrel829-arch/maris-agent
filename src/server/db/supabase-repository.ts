@@ -156,6 +156,8 @@ export function createSupabaseRepository(client: SupabaseClient): NibrexoReposit
     emailLogs: collection('email_logs'),
     emailSequences: collection('email_sequences'),
     socialAccounts: collection('social_accounts'),
+    socialCredentials: collection('social_credentials'),
+    socialOauthStates: collection('social_oauth_states'),
     researchBriefs: collection('research_briefs'),
     productConcepts: collection('product_concepts'),
     visualConcepts: collection('visual_concepts'),

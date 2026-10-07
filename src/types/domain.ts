@@ -199,6 +199,49 @@ export interface SocialAccount {
   status: ConnectionStatus;
   /** Capability map — only what the official API actually supports. */
   capabilities: SocialCapabilities;
+  connected_by: UUID | null;
+  /** Safe user-facing failure text. Never contains secrets. */
+  last_error: string | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+/**
+ * Provider token material. Tokens exist here ONLY as AES-256-GCM ciphertext
+ * (`*_encrypted`); `credential_ref` records the key version (`v1`).
+ * Admin-only at the RLS layer (0005) and never selected for browser paths.
+ */
+export interface SocialCredential {
+  id: UUID;
+  organization_id: UUID;
+  account_id: UUID;
+  credential_ref: string;
+  scopes: string[];
+  expires_at: ISODateTime | null;
+  access_token_encrypted: string | null;
+  refresh_token_encrypted: string | null;
+  token_type: string;
+  refresh_expires_at: ISODateTime | null;
+  last_refreshed_at: ISODateTime | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+/**
+ * Single-use OAuth `state` rows. Only the sha256 hash is stored; `payload`
+ * may carry encrypted interim data (Facebook Page selection) and never
+ * plaintext secrets.
+ */
+export interface SocialOAuthState {
+  id: UUID;
+  organization_id: UUID;
+  platform: SocialPlatform;
+  state_hash: string;
+  redirect_uri: string;
+  requested_by: UUID | null;
+  payload: Record<string, unknown> | null;
+  expires_at: ISODateTime;
+  used_at: ISODateTime | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
 }
@@ -330,6 +373,9 @@ export type ActivityAction =
   | 'content.deleted'
   | 'media.uploaded'
   | 'media.deleted'
+  | 'social.account.connected'
+  | 'social.account.disconnected'
+  | 'social.account.refreshed'
   | 'email.prepared'
   | 'email.sent'
   | 'report.generated'

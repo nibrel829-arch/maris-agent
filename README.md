@@ -41,7 +41,7 @@ written to a disposable store.
    supabase db push
    supabase migration list
    ```
-   The current migration set is `0001` through `0007`; `0005` hardens RLS policies, `0006` adds the Phase 5 CRM fields (`clients.phone`, new `client_status` values) and `0007` creates the Phase 6 private media bucket with storage RLS.
+   The current migration set is `0001` through `0008`; `0005` hardens RLS policies, `0006` adds the Phase 5 CRM fields (`clients.phone`, new `client_status` values), `0007` creates the Phase 6 private media bucket with storage RLS, and `0008` adds the Phase 7 social OAuth states plus encrypted credential columns.
    Without the CLI, generate one ordered script and paste it into the SQL Editor once:
    ```bash
    npm run db:sql          # writes ./all_migrations.sql (pure SQL, no banner)
@@ -58,7 +58,7 @@ written to a disposable store.
 
 ### First owner (organization membership)
 
-**Prerequisite:** migrations `0001`–`0007` applied and confirmed with
+**Prerequisite:** migrations `0001`–`0008` applied and confirmed with
 `supabase/scripts/diagnose_schema.sql` (step 4). Without them the bootstrap stops at its
 read-only preflight listing what is missing — it never creates schema objects itself, because
 `public.org_role` and the identity tables belong to migration `0001`.
@@ -97,7 +97,7 @@ it never emulates a model response.
 | `npm run lint` | ESLint |
 | `npm run auth:status` | Read-only owner/organization/membership diagnosis (`-- --email=…`) |
 | `npm run auth:provision` | Attach the first owner (`-- --email=… --apply`); `--print-sql` needs no credentials |
-| `npm run db:sql` | Write `all_migrations.sql` (0001–0007 in order) for a single SQL-Editor paste |
+| `npm run db:sql` | Write `all_migrations.sql` (0001–0008 in order) for a single SQL-Editor paste |
 | `npm run db:sql:stdout` | Print the same bundle to stdout instead of a file |
 | `npm run verify:schema` | Runs migrations + owner bootstrap against embedded PostgreSQL (needs `npm i --no-save @electric-sql/pglite@0.2.17`) |
 

@@ -17,6 +17,7 @@ describe('Supabase migration contract', () => {
       '0005_rls_hardening.sql',
       '0006_clients_crm.sql',
       '0007_content_storage.sql',
+      '0008_social_connections.sql',
     ]);
   });
 
@@ -71,7 +72,7 @@ describe('Supabase migration contract', () => {
     // `supabase db push` on a database that was set up by hand must also be
     // safe. Policies created inside the dynamic tenant loop use format('%I', …)
     // and are excluded by this pattern.
-    for (const name of ['0004_rls_policies.sql', '0005_rls_hardening.sql']) {
+    for (const name of ['0004_rls_policies.sql', '0005_rls_hardening.sql', '0008_social_connections.sql']) {
       const sql = migration(name);
       const created = [...sql.matchAll(/create policy\s+([a-z0-9_]+)/g)].map((match) => match[1]);
       expect(created.length).toBeGreaterThan(0);
@@ -99,6 +100,22 @@ describe('Supabase migration contract', () => {
     // Guarded for databases without the Supabase storage schema (PGlite).
     expect(storage).toContain("to_regclass('storage.buckets')");
     expect(storage).toContain("to_regclass('storage.objects')");
+  });
+
+  it('adds the Phase 7 social connection states and encrypted credential columns', () => {
+    const social = migration('0008_social_connections.sql');
+    expect(social).toContain('create table if not exists public.social_oauth_states');
+    expect(social).toContain('state_hash text not null unique');
+    expect(social).toContain('add column if not exists access_token_encrypted');
+    expect(social).toContain('add column if not exists refresh_token_encrypted');
+    expect(social).toContain('add column if not exists refresh_expires_at');
+    expect(social).toContain('add column if not exists connected_by');
+    expect(social).toContain('add column if not exists last_error');
+    expect(social).toContain('social_oauth_states_tenant_select');
+    expect(social).toContain('social_oauth_states_tenant_insert');
+    expect(social).toContain('social_oauth_states_tenant_update');
+    expect(social).toContain('social_oauth_states_admin_delete');
+    expect(social).toContain('social_oauth_states_tenant_identity_immutable');
   });
 
   it('never deletes data in any migration', () => {

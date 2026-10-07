@@ -25,6 +25,8 @@ import type {
   ProductConcept,
   ResearchBrief,
   SocialAccount,
+  SocialCredential,
+  SocialOAuthState,
   UUID,
 } from '@/types/domain';
 import type { ManagerTaskSnapshot } from '@/types/manager';
@@ -134,6 +136,8 @@ export interface NibrexoRepository {
   emailLogs: Collection<EmailLog>;
   emailSequences: Collection<EmailSequence>;
   socialAccounts: Collection<SocialAccount>;
+  socialCredentials: Collection<SocialCredential>;
+  socialOauthStates: Collection<SocialOAuthState>;
   researchBriefs: Collection<ResearchBrief>;
   productConcepts: Collection<ProductConcept>;
   visualConcepts: Collection<VisualConcept>;

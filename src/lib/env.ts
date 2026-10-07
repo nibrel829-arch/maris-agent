@@ -70,6 +70,12 @@ export interface ServerEnv extends PublicEnv {
   dataBackend: DataBackend;
   devAuthEnabled: boolean;
   devOrgId: string;
+  /** Server-only AES-256 key (hex/base64) for social token encryption. Null when unset. */
+  tokenEncryptionKey: string | null;
+  /** Public app origin used for OAuth redirect URIs. Null falls back to the request origin. */
+  appUrl: string | null;
+  /** Per-platform OAuth client credentials (server-only; null fields mean unconfigured). */
+  oauthClients: Record<string, { clientId: string | null; clientSecret: string | null }>;
 }
 
 export function publicEnv(): PublicEnv {
@@ -107,5 +113,35 @@ export function serverEnv(): ServerEnv {
     devAuthEnabled: flag(process.env.NIBREXO_DEV_AUTH) && !isProduction,
     devOrgId:
       optional(process.env.NIBREXO_DEV_ORG_ID) ?? '00000000-0000-0000-0000-000000000001',
+    tokenEncryptionKey: optional(process.env.NIBREXO_TOKEN_ENCRYPTION_KEY) ?? null,
+    appUrl: optional(process.env.NIBREXO_APP_URL) ?? null,
+    oauthClients: {
+      // TikTok names its id `client_key`; the env var mirrors the provider.
+      tiktok: {
+        clientId: optional(process.env.NIBREXO_TIKTOK_CLIENT_KEY) ?? null,
+        clientSecret: optional(process.env.NIBREXO_TIKTOK_CLIENT_SECRET) ?? null,
+      },
+      youtube: {
+        clientId: optional(process.env.NIBREXO_GOOGLE_CLIENT_ID) ?? null,
+        clientSecret: optional(process.env.NIBREXO_GOOGLE_CLIENT_SECRET) ?? null,
+      },
+      pinterest: {
+        clientId: optional(process.env.NIBREXO_PINTEREST_CLIENT_ID) ?? null,
+        clientSecret: optional(process.env.NIBREXO_PINTEREST_CLIENT_SECRET) ?? null,
+      },
+      linkedin: {
+        clientId: optional(process.env.NIBREXO_LINKEDIN_CLIENT_ID) ?? null,
+        clientSecret: optional(process.env.NIBREXO_LINKEDIN_CLIENT_SECRET) ?? null,
+      },
+      // Instagram Business Login uses the Instagram App ID/Secret (not the Meta app keys).
+      instagram: {
+        clientId: optional(process.env.NIBREXO_INSTAGRAM_CLIENT_ID) ?? null,
+        clientSecret: optional(process.env.NIBREXO_INSTAGRAM_CLIENT_SECRET) ?? null,
+      },
+      facebook: {
+        clientId: optional(process.env.NIBREXO_META_CLIENT_ID) ?? null,
+        clientSecret: optional(process.env.NIBREXO_META_CLIENT_SECRET) ?? null,
+      },
+    },
   };
 }
