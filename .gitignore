@@ -29,3 +29,6 @@ supabase/.temp/
 npm-debug.log*
 yarn-error.log*
 .vercel
+
+# Generated for the SQL-Editor workflow (npm run db:sql) — regenerate, do not commit
+all_migrations.sql
