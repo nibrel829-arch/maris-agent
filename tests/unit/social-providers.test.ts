@@ -115,7 +115,7 @@ describe('YouTube provider', () => {
     const params = new URLSearchParams(url.split('?')[1]);
     expect(params.get('access_type')).toBe('offline');
     expect(params.get('prompt')).toBe('consent');
-    expect(params.get('scope')).toBe('openid https://www.googleapis.com/auth/youtube.upload');
+    expect(params.get('scope')).toBe('openid https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.force-ssl');
   });
 
   it('keeps the previous refresh token when Google omits a new one', async () => {
@@ -252,6 +252,13 @@ describe('Facebook provider', () => {
         status: 200,
         body: { data: [{ id: 'P1', name: 'Shop', access_token: 'PAGE1', tasks: ['CREATE_CONTENT'] }] },
       },
+      { match: urlContains('/permissions?'), status: 200, body: { data: [
+          { permission: 'pages_show_list', status: 'granted' },
+          { permission: 'pages_manage_metadata', status: 'granted' },
+          { permission: 'pages_manage_posts', status: 'granted' },
+          { permission: 'pages_read_engagement', status: 'granted' },
+          { permission: 'pages_read_user_content', status: 'granted' },
+        ] } },
     ]);
     const tokens = await facebookProvider.exchangeCode({ code: 'C', redirectUri: REDIRECT, credentials: CREDS, http });
     expect(tokens.accessToken).toBe('LONGUSER');

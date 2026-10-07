@@ -187,6 +187,15 @@ export function SearchIcon(props: IconProps) {
   );
 }
 
+export function RefreshIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 7v5h-5M4 17v-5h5" {...stroke} />
+      <path d="M5.5 9a7 7 0 0 1 11.75-2L20 12M4 12l2.75 5a7 7 0 0 0 11.75-2" {...stroke} />
+    </Icon>
+  );
+}
+
 export function SettingsIcon(props: IconProps) {
   return (
     <Icon {...props}>

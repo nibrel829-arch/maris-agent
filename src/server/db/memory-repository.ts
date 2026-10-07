@@ -10,8 +10,9 @@ import { newId } from '@/lib/id';
 import type { PublishJob, UUID } from '@/types/domain';
 import type { BaseRow, Collection, NibrexoRepository, PublishJobCollection } from './types';
 import type { ManagerTaskSnapshot } from '@/types/manager';
+import { createMemoryInboxRepository } from './memory-inbox';
 
-type Store = Map<string, Map<string, Record<string, unknown>>>;
+export type Store = Map<string, Map<string, Record<string, unknown>>>;
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -196,6 +197,7 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
     socialCredentials: collection('social_credentials'),
     socialOauthStates: collection('social_oauth_states'),
     publishJobs: createPublishJobCollection(store),
+    inbox: createMemoryInboxRepository(store),
     researchBriefs: collection('research_briefs'),
     productConcepts: collection('product_concepts'),
     visualConcepts: collection('visual_concepts'),

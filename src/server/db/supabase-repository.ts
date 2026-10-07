@@ -11,6 +11,7 @@ import { newId } from '@/lib/id';
 import type { PublishJob, UUID } from '@/types/domain';
 import type { ManagerTaskSnapshot } from '@/types/manager';
 import type { BaseRow, Collection, NibrexoRepository, PublishJobCollection } from './types';
+import { createSupabaseInboxRepository } from './supabase-inbox';
 
 const DEFAULT_LIMIT = 100;
 
@@ -185,6 +186,7 @@ export function createSupabaseRepository(client: SupabaseClient): NibrexoReposit
     socialCredentials: collection('social_credentials'),
     socialOauthStates: collection('social_oauth_states'),
     publishJobs: createPublishJobCollection(client),
+    inbox: createSupabaseInboxRepository(client),
     researchBriefs: collection('research_briefs'),
     productConcepts: collection('product_concepts'),
     visualConcepts: collection('visual_concepts'),

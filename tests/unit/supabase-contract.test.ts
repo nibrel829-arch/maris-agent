@@ -19,6 +19,7 @@ describe('Supabase migration contract', () => {
       '0007_content_storage.sql',
       '0008_social_connections.sql',
       '0009_publish_jobs.sql',
+      '0010_unified_inbox.sql',
     ]);
   });
 

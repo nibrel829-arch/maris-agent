@@ -2,21 +2,22 @@
 /**
  * Database-level verification of the Nibrexo schema + owner bootstrap.
  *
- * Runs the real migrations (0001-0009) and the real
+ * Runs the real migrations (0001-0010) and the real
  * `supabase/scripts/provision_owner.sql` against an embedded PostgreSQL
  * (@electric-sql/pglite, PostgreSQL compiled to WASM) with a minimal
  * Supabase-compatible `auth` shim. It proves, without touching the live
  * project:
  *
- *   1. all eight migrations apply in order to an empty database;
+ *   1. all ten migrations apply in order to an empty database;
  *   2. an authenticated user with no membership cannot read the organization
  *      and cannot insert their own membership (the RLS chicken-and-egg that
  *      makes owner bootstrap an operator action);
- *   3. the provisioning SQL attaches that user as owner;
- *   4. running it a second time changes nothing (no duplicate organization,
- *      profile or membership);
- *   5. the provisioned user can then read the organization and membership
- *      through RLS, exactly as `resolveActor()` does.
+ *   3. the provisioning SQL attaches that user as owner and remains idempotent;
+ *   4. tenant users see only their organization's inbox conversations,
+ *      messages, participants and sync/reply records, while webhook receipts
+ *      remain admin-readable;
+ *   5. composite inbox foreign keys reject cross-tenant client/participant links;
+ *   6. the generated single-paste schema has the same objects and is rerunnable.
  *
  * Usage:
  *   npm i --no-save @electric-sql/pglite@0.2.17
@@ -160,6 +161,7 @@ for (const name of [
   '0007_content_storage.sql',
   '0008_social_connections.sql',
   '0009_publish_jobs.sql',
+  '0010_unified_inbox.sql',
 ]) {
   await db.exec(migrationSql(readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')));
   console.log(`  ✓ applied ${name}`);
@@ -289,7 +291,132 @@ if (after.rows[0].n !== 2) {
 }
 console.log('  ✓ with 2 organizations and no slug match it refuses to guess and creates nothing');
 
-// --- 5. Publish claim function: single-flight handoff -----------------------
+// --- 5. Unified Inbox RLS + relationship isolation -------------------------
+const tenantA = (await db.query(`select id from public.organizations where slug = 'nibrexo'`)).rows[0].id;
+const tenantB = (await db.query(`select id from public.organizations where slug = 'other-org'`)).rows[0].id;
+const accountA = 'aaaaaaaa-1111-4111-8111-111111111111';
+const accountB = 'bbbbbbbb-2222-4222-8222-222222222222';
+const clientA = 'cccccccc-3333-4333-8333-333333333333';
+const clientB = 'dddddddd-4444-4444-8444-444444444444';
+const conversationA = 'eeeeeeee-5555-4555-8555-555555555555';
+const conversationB = 'ffffffff-6666-4666-8666-666666666666';
+const participantA = '11111111-aaaa-4aaa-8aaa-111111111111';
+const participantB = '22222222-bbbb-4bbb-8bbb-222222222222';
+const messageA = '33333333-cccc-4ccc-8ccc-333333333333';
+const messageB = '44444444-dddd-4ddd-8ddd-444444444444';
+const memberId = '55555555-eeee-4eee-8eee-555555555555';
+await db.exec(`
+  insert into public.social_accounts (id, organization_id, platform, external_account_id, name, status)
+  values ('${accountA}', '${tenantA}', 'youtube', 'YT-TENANT-A', 'Tenant A channel', 'connected'),
+         ('${accountB}', '${tenantB}', 'youtube', 'YT-TENANT-B', 'Tenant B channel', 'connected');
+  insert into public.clients (id, organization_id, name)
+  values ('${clientA}', '${tenantA}', 'Tenant A client'), ('${clientB}', '${tenantB}', 'Tenant B client');
+  insert into public.conversations
+    (id, organization_id, account_id, platform, external_thread_id, participant_name, kind, client_id, is_read)
+  values ('${conversationA}', '${tenantA}', '${accountA}', 'youtube', 'YT-THREAD-A', 'Viewer A', 'comment_thread', '${clientA}', false),
+         ('${conversationB}', '${tenantB}', '${accountB}', 'youtube', 'YT-THREAD-B', 'Viewer B', 'comment_thread', '${clientB}', false);
+  insert into public.inbox_participants (id, organization_id, conversation_id, external_participant_id, display_name)
+  values ('${participantA}', '${tenantA}', '${conversationA}', 'VIEWER-A', 'Viewer A'),
+         ('${participantB}', '${tenantB}', '${conversationB}', 'VIEWER-B', 'Viewer B');
+  insert into public.messages (id, organization_id, conversation_id, external_message_id, direction, kind, body, participant_id)
+  values ('${messageA}', '${tenantA}', '${conversationA}', 'YT-COMMENT-A', 'inbound', 'comment', 'A only', '${participantA}'),
+         ('${messageB}', '${tenantB}', '${conversationB}', 'YT-COMMENT-B', 'inbound', 'comment', 'B only', '${participantB}');
+  insert into public.inbox_sync_states (organization_id, account_id, platform)
+  values ('${tenantA}', '${accountA}', 'youtube'), ('${tenantB}', '${accountB}', 'youtube');
+  insert into public.inbox_reply_attempts
+    (organization_id, account_id, conversation_id, idempotency_key, request_hash, status)
+  values ('${tenantA}', '${accountA}', '${conversationA}', 'tenant-a-reply-key', 'hash-a', 'failed'),
+         ('${tenantB}', '${accountB}', '${conversationB}', 'tenant-b-reply-key', 'hash-b', 'failed');
+  insert into public.inbox_webhook_receipts
+    (organization_id, account_id, provider_event_key, event_type, status)
+  values ('${tenantA}', '${accountA}', 'event-a', 'page.feed', 'processed'),
+         ('${tenantB}', '${accountB}', 'event-b', 'page.feed', 'processed');
+  insert into auth.users (id, email) values ('${memberId}', 'member@nibrexo.com');
+  insert into public.memberships (organization_id, user_id, role)
+  values ('${tenantA}', '${memberId}', 'member');
+`);
+
+await db.exec(`select set_config('request.jwt.claim.sub', '${OWNER_ID}', false);`);
+await db.exec('set role authenticated;');
+const ownerInboxRows = await db.query(`
+  select
+    (select count(*)::int from public.conversations) as conversations,
+    (select count(*)::int from public.messages) as messages,
+    (select count(*)::int from public.inbox_participants) as participants,
+    (select count(*)::int from public.inbox_sync_states) as sync_states,
+    (select count(*)::int from public.inbox_reply_attempts) as reply_attempts,
+    (select count(*)::int from public.inbox_webhook_receipts) as webhook_receipts,
+    (select count(*)::int from public.clients) as clients
+`);
+const ownerInbox = ownerInboxRows.rows[0];
+if (Object.values(ownerInbox).some((value) => value !== 1)) {
+  fail(`Owner should see one row in each of its inbox/CRM resources, not another tenant: ${JSON.stringify(ownerInbox)}`);
+}
+await db.exec('reset role;');
+await db.exec(`select set_config('request.jwt.claim.sub', '${memberId}', false);`);
+await db.exec('set role authenticated;');
+const memberInboxRows = await db.query(`
+  select
+    (select count(*)::int from public.conversations) as conversations,
+    (select count(*)::int from public.messages) as messages,
+    (select count(*)::int from public.inbox_participants) as participants,
+    (select count(*)::int from public.inbox_sync_states) as sync_states,
+    (select count(*)::int from public.inbox_reply_attempts) as reply_attempts,
+    (select count(*)::int from public.inbox_webhook_receipts) as webhook_receipts
+`);
+const memberInbox = memberInboxRows.rows[0];
+if (
+  memberInbox.conversations !== 1 || memberInbox.messages !== 1 ||
+  memberInbox.participants !== 1 || memberInbox.sync_states !== 1 ||
+  memberInbox.reply_attempts !== 1 || memberInbox.webhook_receipts !== 0
+) {
+  fail(`Member tenant reads should be scoped, and webhook receipts admin-only: ${JSON.stringify(memberInbox)}`);
+}
+let memberIngestBlocked = false;
+try {
+  await db.exec(`
+    insert into public.conversations (organization_id, platform, external_thread_id, kind)
+    values ('${tenantA}', 'youtube', 'MEMBER-CANNOT-INGEST', 'comment_thread');
+  `);
+} catch (error) {
+  memberIngestBlocked = /row-level security/i.test(String(error));
+}
+if (!memberIngestBlocked) fail('A tenant member must not directly ingest conversations through PostgREST.');
+let memberMessageInsertBlocked = false;
+try {
+  await db.exec(`
+    insert into public.messages (organization_id, conversation_id, external_message_id, direction, kind)
+    values ('${tenantA}', '${conversationA}', 'MEMBER-CANNOT-INGEST', 'inbound', 'comment');
+  `);
+} catch (error) {
+  memberMessageInsertBlocked = /row-level security/i.test(String(error));
+}
+if (!memberMessageInsertBlocked) fail('A tenant member must not directly ingest provider messages through PostgREST.');
+await db.exec('reset role;');
+
+let crossTenantClientBlocked = false;
+try {
+  await db.exec(`
+    insert into public.conversations (organization_id, account_id, platform, external_thread_id, client_id)
+    values ('${tenantA}', '${accountA}', 'youtube', 'CROSS-TENANT-CLIENT', '${clientB}');
+  `);
+} catch (error) {
+  crossTenantClientBlocked = /foreign key/i.test(String(error));
+}
+if (!crossTenantClientBlocked) fail('The composite conversation/client foreign key must reject cross-tenant links.');
+let crossTenantParticipantBlocked = false;
+try {
+  await db.exec(`
+    insert into public.messages (organization_id, conversation_id, external_message_id, direction, participant_id)
+    values ('${tenantA}', '${conversationA}', 'CROSS-TENANT-PARTICIPANT', 'inbound', '${participantB}');
+  `);
+} catch (error) {
+  crossTenantParticipantBlocked = /foreign key/i.test(String(error));
+}
+if (!crossTenantParticipantBlocked) fail('The composite message/participant foreign key must reject cross-tenant links.');
+console.log('  ✓ inbox RLS scopes owner/member reads by organization, keeps receipts admin-only, and rejects cross-tenant CRM/participant links');
+
+// --- 6. Publish claim function: single-flight handoff -----------------------
 // A due queued row is claimed exactly once: the first call flips it to
 // publishing with a lease, the second call (lease still fresh) returns
 // nothing. This is the sweeper's exactly-one-worker guarantee.
@@ -328,9 +455,9 @@ if (secondClaim.rows.length !== 0) {
 }
 console.log('  ✓ claim_due_publish_jobs: due row claimed once (publishing, attempts=1), second claim empty');
 
-// --- 6. SQL-Editor path: one generated script, one paste --------------------
+// --- 7. SQL-Editor path: one generated script, one paste --------------------
 // `npm run db:sql` output must produce exactly the same schema as applying the
-// eight files individually, which is what a SQL-Editor operator pastes.
+// migration files individually, which is what a SQL-Editor operator pastes.
 const { loadMigrations, renderMigrations } = await import('./lib/migrations-sql.mjs');
 const singlePaste = renderMigrations(loadMigrations(root, migrationSql));
 

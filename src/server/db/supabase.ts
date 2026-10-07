@@ -11,7 +11,7 @@
 
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
-import { createServerClient as createSsrServerClient } from '@supabase/ssr';
+import { createServerClient as createSsrServerClient, type CookieOptions } from '@supabase/ssr';
 import { publicEnv, serverEnv } from '@/lib/env';
 
 export type NibrexoSupabaseClient = SupabaseClient;
@@ -27,7 +27,7 @@ export async function createSupabaseServerClient(): Promise<NibrexoSupabaseClien
       getAll() {
         return cookieStore.getAll();
       },
-      setAll(cookiesToSet) {
+      setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
         try {
           for (const { name, value, options } of cookiesToSet) {
             cookieStore.set(name, value, options);

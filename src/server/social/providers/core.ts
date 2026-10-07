@@ -49,7 +49,7 @@ export function defaultProviderHttp(timeoutMs = 15_000): ProviderHttp {
     const response = await fetch(url, {
       method: init.method,
       headers: init.headers,
-      body: init.body,
+      body: init.body as BodyInit | undefined,
       signal: AbortSignal.timeout(timeoutMs),
     });
     const headers: Record<string, string> = {};

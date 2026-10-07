@@ -31,6 +31,7 @@ import type {
   UUID,
 } from '@/types/domain';
 import type { ManagerTaskSnapshot } from '@/types/manager';
+import type { InboxDataAccess } from '@/types/inbox';
 
 export interface BaseRow {
   id: UUID;
@@ -151,6 +152,8 @@ export interface NibrexoRepository {
   socialCredentials: Collection<SocialCredential>;
   socialOauthStates: Collection<SocialOAuthState>;
   publishJobs: PublishJobCollection;
+  /** Normalized inbox persistence, provider IDs/cursors, webhook receipts and reply idempotency. */
+  inbox: InboxDataAccess;
   researchBriefs: Collection<ResearchBrief>;
   productConcepts: Collection<ProductConcept>;
   visualConcepts: Collection<VisualConcept>;

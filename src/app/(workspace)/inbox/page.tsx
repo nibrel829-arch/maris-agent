@@ -1,8 +1,12 @@
-import { Card, EmptyState, KeyValue } from '@/components/ui/primitives';
+import { ConfigurationRequired } from '@/components/layout/ConfigurationRequired';
+import { ErrorState } from '@/components/ui/primitives';
+import { InboxWorkspace } from '@/components/inbox/InboxWorkspace';
+import { checkPermission } from '@/server/auth/permissions';
 import { resolveActor } from '@/server/auth/actor';
 import { getRequestRepository } from '@/server/db';
+import { getInboxConversation, listInbox } from '@/server/inbox/service';
+import { inboxMessageQuerySchema } from '@/server/inbox/validation';
 import { publicEnv } from '@/lib/env';
-import { ConfigurationRequired } from '@/components/layout/ConfigurationRequired';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,44 +22,28 @@ export default async function InboxPage() {
 
   const actor = actorResult.data;
   const repo = repoResult.data;
+  const listed = await listInbox(actor, repo, { limit: 30, offset: 0 });
+  if (!listed.ok) return <ErrorState message={listed.error.message} />;
 
-  const [accounts, community] = await Promise.all([
-    repo.socialAccounts.list(actor.organizationId, { limit: 50 }),
-    repo.communityPlans.list(actor.organizationId, { limit: 20 }),
-  ]);
-
-  const dmCapable = accounts.filter((account) => account.capabilities.readDm);
+  const firstConversation = listed.data.conversations[0] ?? null;
+  const detail = firstConversation
+    ? await getInboxConversation(actor, repo, firstConversation.id, inboxMessageQuerySchema.parse({ limit: 100 }))
+    : null;
+  const canEdit = checkPermission(actor, { module: 'inbox', action: 'edit' }).allowed;
+  const canSend = checkPermission(actor, { module: 'inbox', action: 'send' }).allowed;
+  const canViewClients = checkPermission(actor, { module: 'clients', action: 'view' }).allowed;
+  const clients = canViewClients
+    ? await repo.clients.list(actor.organizationId, { limit: 500, orderBy: 'name', ascending: true })
+    : [];
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-white">Unified Inbox</h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Supported DMs, comments and mentions in one place.
-        </p>
-      </div>
-
-      <Card title="Ingestion status">
-        <KeyValue
-          label="Accounts connected"
-          value={accounts.length === 0 ? 'None' : accounts.length}
-        />
-        <KeyValue
-          label="Accounts with DM read capability"
-          value={dmCapable.length === 0 ? 'None' : dmCapable.length}
-        />
-        <KeyValue
-          label="Community guidelines"
-          value={community.length === 0 ? 'Not defined' : `${community.length} plan(s)`}
-        />
-      </Card>
-
-      <Card title="Conversations">
-        <EmptyState
-          title="No conversations ingested yet"
-          description="Inbox ingestion requires connected accounts whose official API grants read access to messages and comments. Where an official API does not support it, Nibrexo reports the capability as unsupported instead of scraping the platform."
-        />
-      </Card>
-    </div>
+    <InboxWorkspace
+      canAssociateClients={canViewClients}
+      canEdit={canEdit}
+      canSend={canSend}
+      clientOptions={clients.map(({ id, name, company }) => ({ id, name, company }))}
+      initialDetail={detail?.ok ? detail.data : null}
+      initialList={listed.data}
+    />
   );
 }
