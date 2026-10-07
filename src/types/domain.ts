@@ -57,7 +57,15 @@ export interface ActorContext {
 /* CRM (PDF #05 §6)                                                            */
 /* -------------------------------------------------------------------------- */
 
-export type ClientStatus = 'lead' | 'qualified' | 'active' | 'paused' | 'churned';
+export type ClientStatus =
+  | 'lead'
+  | 'prospect'
+  | 'qualified'
+  | 'active'
+  | 'paused'
+  | 'inactive'
+  | 'churned'
+  | 'completed';
 
 export interface Client {
   id: UUID;
@@ -65,6 +73,7 @@ export interface Client {
   name: string;
   company: string | null;
   email: string | null;
+  phone: string | null;
   status: ClientStatus;
   tags: string[];
   notes: string | null;
@@ -137,6 +146,17 @@ export type ContentStatus =
   | 'FAILED'
   | 'CANCELLED';
 
+export interface MediaFile {
+  id: UUID;
+  organization_id: UUID;
+  storage_path: string;
+  mime_type: string;
+  size_bytes: number;
+  created_by: UUID | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
 export interface ContentItem {
   id: UUID;
   organization_id: UUID;
@@ -179,6 +199,49 @@ export interface SocialAccount {
   status: ConnectionStatus;
   /** Capability map — only what the official API actually supports. */
   capabilities: SocialCapabilities;
+  connected_by: UUID | null;
+  /** Safe user-facing failure text. Never contains secrets. */
+  last_error: string | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+/**
+ * Provider token material. Tokens exist here ONLY as AES-256-GCM ciphertext
+ * (`*_encrypted`); `credential_ref` records the key version (`v1`).
+ * Admin-only at the RLS layer (0005) and never selected for browser paths.
+ */
+export interface SocialCredential {
+  id: UUID;
+  organization_id: UUID;
+  account_id: UUID;
+  credential_ref: string;
+  scopes: string[];
+  expires_at: ISODateTime | null;
+  access_token_encrypted: string | null;
+  refresh_token_encrypted: string | null;
+  token_type: string;
+  refresh_expires_at: ISODateTime | null;
+  last_refreshed_at: ISODateTime | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+/**
+ * Single-use OAuth `state` rows. Only the sha256 hash is stored; `payload`
+ * may carry encrypted interim data (Facebook Page selection) and never
+ * plaintext secrets.
+ */
+export interface SocialOAuthState {
+  id: UUID;
+  organization_id: UUID;
+  platform: SocialPlatform;
+  state_hash: string;
+  redirect_uri: string;
+  requested_by: UUID | null;
+  payload: Record<string, unknown> | null;
+  expires_at: ISODateTime;
+  used_at: ISODateTime | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
 }
@@ -191,6 +254,91 @@ export interface SocialCapabilities {
   readComments: boolean;
   replyComments: boolean;
   analytics: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Publishing (PDF #12 §17; migration 0009)                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Per-target publish lifecycle. Terminal states: published, failed, unknown,
+ * cancelled. `unknown` means the provider gave an ambiguous result (poll
+ * budget exhausted, unreadable response) — it is reported as unknown, never
+ * rounded up to published.
+ */
+export type PublishJobStatus =
+  | 'queued'
+  | 'publishing'
+  | 'verifying'
+  | 'scheduled'
+  | 'published'
+  | 'failed'
+  | 'unknown'
+  | 'cancelled';
+
+/** How a published job was confirmed (see migration 0009). */
+export type PublishVerification = 'read_back' | 'provider_reference';
+
+/**
+ * Frozen publish snapshot stored on the job at creation. Later content edits
+ * never change a scheduled post. Never contains tokens or secrets.
+ */
+export interface PublishPayloadSnapshot {
+  title: string;
+  caption: string;
+  /** Attached library media, when the publish carries media. */
+  mediaId: string | null;
+  mediaKind: 'image' | 'video' | null;
+  mediaMime: string | null;
+  mediaSizeBytes: number | null;
+  /** External media URL (agent/tools path or absolute content URL). No bytes. */
+  mediaExternalUrl: string | null;
+  /** Library image used as the Pinterest video-Pin cover. */
+  coverMediaId: string | null;
+  /** External link for link-style posts (Facebook), when supplied. */
+  linkUrl: string | null;
+  /** Per-target provider options (board id, privacy, category...). */
+  options: Record<string, string | boolean>;
+}
+
+/**
+ * Interim NON-SECRET provider state carried across sweeps (container ids,
+ * publish ids, upload ids). Upload URLs, tokens and secrets are never stored.
+ */
+export interface PublishProviderState {
+  /** Provider reference for the in-flight operation (container/publish/media id). */
+  ref?: string;
+  /** Provider step reached (submit/poll/verify), per adapter. */
+  step?: string;
+  /** Durable provider post id once the provider returns one. */
+  postId?: string;
+  /** Poll round for async providers. */
+  pollRound?: number;
+  [key: string]: unknown;
+}
+
+export interface PublishJob {
+  id: UUID;
+  organization_id: UUID;
+  content_id: UUID;
+  account_id: UUID;
+  platform: SocialPlatform;
+  status: PublishJobStatus;
+  verification: PublishVerification | null;
+  run_at: ISODateTime;
+  timezone: string;
+  idempotency_key: string;
+  attempts: number;
+  max_attempts: number;
+  provider_ref: string | null;
+  provider_payload: PublishProviderState;
+  payload: PublishPayloadSnapshot;
+  last_error: string | null;
+  next_poll_at: ISODateTime | null;
+  locked_at: ISODateTime | null;
+  created_by: UUID | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -307,6 +455,16 @@ export type ActivityAction =
   | 'lead.qualified'
   | 'content.created'
   | 'content.updated'
+  | 'content.deleted'
+  | 'media.uploaded'
+  | 'media.deleted'
+  | 'social.account.connected'
+  | 'social.account.disconnected'
+  | 'social.account.refreshed'
+  | 'publish.job.created'
+  | 'publish.job.published'
+  | 'publish.job.failed'
+  | 'publish.job.cancelled'
   | 'email.prepared'
   | 'email.sent'
   | 'report.generated'

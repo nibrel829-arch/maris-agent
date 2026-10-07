@@ -5,9 +5,8 @@
 import { z } from 'zod';
 import { newId } from '@/lib/id';
 import type { ClientStatus } from '@/types/domain';
+import { CLIENT_STATUSES } from '@/server/clients/validation';
 import { defineTool } from './define';
-
-const CLIENT_STATUSES: readonly ClientStatus[] = ['lead', 'qualified', 'active', 'paused', 'churned'];
 
 export const listClientsTool = defineTool({
   name: 'list_clients',
@@ -15,7 +14,7 @@ export const listClientsTool = defineTool({
   permission: { module: 'clients', action: 'view' },
   risk: 'low',
   inputSchema: z.object({
-    status: z.enum(['lead', 'qualified', 'active', 'paused', 'churned']).optional(),
+    status: z.enum(CLIENT_STATUSES).optional(),
     limit: z.number().int().min(1).max(200).default(50),
   }),
   async execute(input, ctx) {
@@ -47,7 +46,8 @@ export const createClientTool = defineTool({
     name: z.string().min(1).max(200),
     company: z.string().max(200).optional(),
     email: z.string().email().optional(),
-    status: z.enum(['lead', 'qualified', 'active', 'paused', 'churned']).default('lead'),
+    phone: z.string().max(50).optional(),
+    status: z.enum(CLIENT_STATUSES).default('lead'),
     tags: z.array(z.string().max(50)).max(25).default([]),
     notes: z.string().max(5000).optional(),
   }),
@@ -57,6 +57,7 @@ export const createClientTool = defineTool({
       name: input.name,
       company: input.company ?? null,
       email: input.email ?? null,
+      phone: input.phone ?? null,
       status: input.status as ClientStatus,
       tags: input.tags,
       notes: input.notes ?? null,
@@ -86,7 +87,8 @@ export const updateClientTool = defineTool({
     name: z.string().min(1).max(200).optional(),
     company: z.string().max(200).optional(),
     email: z.string().email().optional(),
-    status: z.enum(['lead', 'qualified', 'active', 'paused', 'churned']).optional(),
+    phone: z.string().max(50).optional(),
+    status: z.enum(CLIENT_STATUSES).optional(),
     tags: z.array(z.string().max(50)).max(25).optional(),
     notes: z.string().max(5000).optional(),
   }),
@@ -98,6 +100,7 @@ export const updateClientTool = defineTool({
     if (input.name !== undefined) patch.name = input.name;
     if (input.company !== undefined) patch.company = input.company;
     if (input.email !== undefined) patch.email = input.email;
+    if (input.phone !== undefined) patch.phone = input.phone;
     if (input.status !== undefined) patch.status = input.status;
     if (input.tags !== undefined) patch.tags = input.tags;
     if (input.notes !== undefined) patch.notes = input.notes;

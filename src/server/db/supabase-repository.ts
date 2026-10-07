@@ -8,9 +8,9 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { newId } from '@/lib/id';
-import type { UUID } from '@/types/domain';
+import type { PublishJob, UUID } from '@/types/domain';
 import type { ManagerTaskSnapshot } from '@/types/manager';
-import type { BaseRow, Collection, NibrexoRepository } from './types';
+import type { BaseRow, Collection, NibrexoRepository, PublishJobCollection } from './types';
 
 const DEFAULT_LIMIT = 100;
 
@@ -76,6 +76,17 @@ function createCollection<T extends BaseRow>(
       if (error) throw new Error(`Supabase read failed for ${table}: ${error.message}`);
       return (data as unknown as T) ?? null;
     },
+
+    async delete(id, organizationId) {
+      const { data, error } = await client
+        .from(table)
+        .delete()
+        .eq('id', id)
+        .eq('organization_id', organizationId)
+        .select('id');
+      if (error) throw new Error(`Supabase delete failed for ${table}: ${error.message}`);
+      return (data?.length ?? 0) > 0;
+    },
   };
 }
 
@@ -118,6 +129,7 @@ function fromSnapshot(task: ManagerTaskSnapshot): Record<string, unknown> {
 
 const COUNT_TABLES = [
   'clients',
+  'media_files',
   'leads',
   'content_items',
   'email_templates',
@@ -128,6 +140,32 @@ const COUNT_TABLES = [
   'activity_logs',
 ] as const;
 
+function createPublishJobCollection(client: SupabaseClient): PublishJobCollection {
+  const base = createCollection<PublishJob>(client, 'publish_jobs');
+  return {
+    ...base,
+    async findByIdempotencyKey(organizationId, key) {
+      const { data, error } = await client
+        .from('publish_jobs')
+        .select('*')
+        .eq('organization_id', organizationId)
+        .eq('idempotency_key', key)
+        .maybeSingle();
+      if (error) throw new Error(`Supabase read failed for publish_jobs: ${error.message}`);
+      return (data as unknown as PublishJob) ?? null;
+    },
+    async claimDueJobs(nowIso, lockSeconds, limit) {
+      const { data, error } = await client.rpc('claim_due_publish_jobs', {
+        p_now: nowIso,
+        p_lock_seconds: lockSeconds,
+        p_limit: limit,
+      });
+      if (error) throw new Error(`Supabase claim failed for publish_jobs: ${error.message}`);
+      return (data ?? []) as unknown as PublishJob[];
+    },
+  };
+}
+
 export function createSupabaseRepository(client: SupabaseClient): NibrexoRepository {
   const collection = <T extends BaseRow>(table: string): Collection<T> =>
     createCollection<T>(client, table);
@@ -137,12 +175,16 @@ export function createSupabaseRepository(client: SupabaseClient): NibrexoReposit
 
     clients: collection('clients'),
     clientActivity: collection('client_activity'),
+    mediaFiles: collection('media_files'),
     leads: collection('leads'),
     contentItems: collection('content_items'),
     emailTemplates: collection('email_templates'),
     emailLogs: collection('email_logs'),
     emailSequences: collection('email_sequences'),
     socialAccounts: collection('social_accounts'),
+    socialCredentials: collection('social_credentials'),
+    socialOauthStates: collection('social_oauth_states'),
+    publishJobs: createPublishJobCollection(client),
     researchBriefs: collection('research_briefs'),
     productConcepts: collection('product_concepts'),
     visualConcepts: collection('visual_concepts'),

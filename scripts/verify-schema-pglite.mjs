@@ -2,13 +2,13 @@
 /**
  * Database-level verification of the Nibrexo schema + owner bootstrap.
  *
- * Runs the real migrations (0001-0005) and the real
+ * Runs the real migrations (0001-0009) and the real
  * `supabase/scripts/provision_owner.sql` against an embedded PostgreSQL
  * (@electric-sql/pglite, PostgreSQL compiled to WASM) with a minimal
  * Supabase-compatible `auth` shim. It proves, without touching the live
  * project:
  *
- *   1. all five migrations apply in order to an empty database;
+ *   1. all eight migrations apply in order to an empty database;
  *   2. an authenticated user with no membership cannot read the organization
  *      and cannot insert their own membership (the RLS chicken-and-egg that
  *      makes owner bootstrap an operator action);
@@ -76,6 +76,9 @@ await db.exec(`
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
   $$;
   do $$ begin
+    if not exists (select 1 from pg_roles where rolname = 'anon') then
+      create role anon nologin;
+    end if;
     if not exists (select 1 from pg_roles where rolname = 'authenticated') then
       create role authenticated nologin;
     end if;
@@ -153,6 +156,10 @@ for (const name of [
   '0003_manager_agent.sql',
   '0004_rls_policies.sql',
   '0005_rls_hardening.sql',
+  '0006_clients_crm.sql',
+  '0007_content_storage.sql',
+  '0008_social_connections.sql',
+  '0009_publish_jobs.sql',
 ]) {
   await db.exec(migrationSql(readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')));
   console.log(`  ✓ applied ${name}`);
@@ -282,9 +289,48 @@ if (after.rows[0].n !== 2) {
 }
 console.log('  ✓ with 2 organizations and no slug match it refuses to guess and creates nothing');
 
-// --- 5. SQL-Editor path: one generated script, one paste --------------------
+// --- 5. Publish claim function: single-flight handoff -----------------------
+// A due queued row is claimed exactly once: the first call flips it to
+// publishing with a lease, the second call (lease still fresh) returns
+// nothing. This is the sweeper's exactly-one-worker guarantee.
+const claimOrg = (
+  await db.query(`select id from public.organizations order by created_at asc limit 1`)
+).rows[0].id;
+const claimContent = (
+  await db.query(
+    `insert into public.content_items (organization_id, title) values ('${claimOrg}', 'Claim probe') returning id`,
+  )
+).rows[0].id;
+const claimAccount = (
+  await db.query(
+    `insert into public.social_accounts (organization_id, platform, external_account_id, name, status)
+     values ('${claimOrg}', 'facebook', 'probe-page', 'Probe Page', 'connected') returning id`,
+  )
+).rows[0].id;
+await db.query(
+  `insert into public.publish_jobs (organization_id, content_id, account_id, platform, status, run_at, idempotency_key)
+   values ('${claimOrg}', '${claimContent}', '${claimAccount}', 'facebook', 'queued', now() - interval '1 minute', 'probe-key-1')`,
+);
+const firstClaim = await db.query(
+  `select id, status, attempts from public.claim_due_publish_jobs(now(), 300, 10)`,
+);
+if (firstClaim.rows.length !== 1) {
+  fail(`claim_due_publish_jobs returned ${firstClaim.rows.length} rows, expected 1.`);
+}
+if (firstClaim.rows[0].status !== 'publishing' || firstClaim.rows[0].attempts !== 1) {
+  fail('claim_due_publish_jobs must flip the row to publishing and bump attempts.');
+}
+const secondClaim = await db.query(
+  `select id from public.claim_due_publish_jobs(now(), 300, 10)`,
+);
+if (secondClaim.rows.length !== 0) {
+  fail('claim_due_publish_jobs handed the same job to a second sweeper.');
+}
+console.log('  ✓ claim_due_publish_jobs: due row claimed once (publishing, attempts=1), second claim empty');
+
+// --- 6. SQL-Editor path: one generated script, one paste --------------------
 // `npm run db:sql` output must produce exactly the same schema as applying the
-// five files individually, which is what a SQL-Editor operator pastes.
+// eight files individually, which is what a SQL-Editor operator pastes.
 const { loadMigrations, renderMigrations } = await import('./lib/migrations-sql.mjs');
 const singlePaste = renderMigrations(loadMigrations(root, migrationSql));
 
@@ -296,6 +342,7 @@ await fresh.exec(`
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
   $$;
   do $$ begin
+    if not exists (select 1 from pg_roles where rolname = 'anon') then create role anon nologin; end if;
     if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
     if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role nologin bypassrls; end if;
   end $$;

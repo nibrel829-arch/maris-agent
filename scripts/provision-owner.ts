@@ -574,7 +574,7 @@ async function main(): Promise<number> {
     console.error(
       `\n  ✖ Could not read the database: ${error instanceof Error ? error.message : 'unknown error'}`,
     );
-    console.error('    Check that migrations 0001-0005 are applied to this project.\n');
+    console.error('    Check that migrations 0001-0008 are applied to this project.\n');
     return 6;
   }
 

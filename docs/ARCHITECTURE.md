@@ -72,6 +72,10 @@ write and update. Migrations live in `supabase/migrations/`:
 | `0002_modules.sql` | clients, client_activity, leads, media_files, content_items, scheduled_jobs, social accounts/credentials, conversations, messages, email tables |
 | `0003_manager_agent.sql` | ai_tasks, ai_actions, ai_memory, approvals, research_briefs, product_concepts, visual_concepts, campaign_plans, social_plans, community_plans, quality_reports |
 | `0004_rls_policies.sql` | RLS on every tenant table; destructive writes restricted to owner/admin |
+| `0005_rls_hardening.sql` | RLS hardening: tenant-identity immutability, append-only audit, requester/admin task and credential boundaries |
+| `0006_clients_crm.sql` | Phase 5 CRM: `clients.phone`, `prospect`/`inactive`/`completed` statuses, activity index (RLS unchanged) |
+| `0007_content_storage.sql` | Phase 6 Content: private `nibrexo-media` bucket + org-scoped `storage.objects` RLS (guarded for non-Supabase databases) |
+| `0008_social_connections.sql` | Phase 7 Social: `social_oauth_states` (single-use state hashes, tenant RLS) + encrypted token columns on `social_credentials` + `connected_by`/`last_error` on `social_accounts` |
 
 ## 5. Security model
 

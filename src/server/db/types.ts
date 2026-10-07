@@ -16,14 +16,18 @@ import type {
   ActivityLog,
   ApprovalRecord,
   Client,
+  MediaFile,
   ClientActivity,
   ContentItem,
   EmailLog,
   EmailTemplate,
   Lead,
   ProductConcept,
+  PublishJob,
   ResearchBrief,
   SocialAccount,
+  SocialCredential,
+  SocialOAuthState,
   UUID,
 } from '@/types/domain';
 import type { ManagerTaskSnapshot } from '@/types/manager';
@@ -50,6 +54,19 @@ export interface Collection<T extends BaseRow> {
   ): Promise<T>;
   update(id: UUID, organizationId: UUID, patch: Partial<T>): Promise<T | null>;
   get(id: UUID, organizationId: UUID): Promise<T | null>;
+  /** Tenant-scoped delete. Resolves true only when a row was removed. */
+  delete(id: UUID, organizationId: UUID): Promise<boolean>;
+}
+
+/**
+ * Publish-job queue. `findByIdempotencyKey` resolves retried submissions to
+ * the existing row; `claimDueJobs` hands each due row to exactly one sweeper
+ * (Postgres: `claim_due_publish_jobs()` with SKIP LOCKED; memory: atomic
+ * in-process claim). Claiming bumps `attempts` and sets the lock lease.
+ */
+export interface PublishJobCollection extends Collection<PublishJob> {
+  findByIdempotencyKey(organizationId: UUID, key: string): Promise<PublishJob | null>;
+  claimDueJobs(nowIso: string, lockSeconds: number, limit: number): Promise<PublishJob[]>;
 }
 
 export interface CampaignPlan extends BaseRow {
@@ -124,12 +141,16 @@ export interface NibrexoRepository {
 
   clients: Collection<Client>;
   clientActivity: Collection<ClientActivity>;
+  mediaFiles: Collection<MediaFile>;
   leads: Collection<Lead>;
   contentItems: Collection<ContentItem>;
   emailTemplates: Collection<EmailTemplate>;
   emailLogs: Collection<EmailLog>;
   emailSequences: Collection<EmailSequence>;
   socialAccounts: Collection<SocialAccount>;
+  socialCredentials: Collection<SocialCredential>;
+  socialOauthStates: Collection<SocialOAuthState>;
+  publishJobs: PublishJobCollection;
   researchBriefs: Collection<ResearchBrief>;
   productConcepts: Collection<ProductConcept>;
   visualConcepts: Collection<VisualConcept>;

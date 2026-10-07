@@ -18,6 +18,7 @@ const PAGE_CONTEXT: Array<{ match: string; title: string; subtitle: string }> = 
   { match: '/research', title: 'Research workspace', subtitle: 'Evidence, gaps and next moves' },
   { match: '/product', title: 'Product workspace', subtitle: 'Concepts moving toward proof' },
   { match: '/leads', title: 'Leads workspace', subtitle: 'Provenance before outreach' },
+  { match: '/content', title: 'Content library', subtitle: 'Drafts, captions and media' },
   { match: '/marketing', title: 'Marketing workspace', subtitle: 'Content and campaigns in motion' },
   { match: '/reports', title: 'Business reporting', subtitle: 'The facts currently on record' },
   { match: '/clients', title: 'Relationships', subtitle: 'Clients and CRM context' },

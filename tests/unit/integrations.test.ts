@@ -7,7 +7,7 @@ afterEach(() => {
 });
 
 describe('honest integration states', () => {
-  it('reports an unverified social publish as unsupported rather than successful', async () => {
+  it('reports an unconfigured execution environment as not_configured rather than successful', async () => {
     const outcome = await getSocialAdapter('linkedin').publish({
       organizationId: '00000000-0000-0000-0000-000000000001',
       accountId: '00000000-0000-0000-0000-000000000002',
@@ -18,10 +18,24 @@ describe('honest integration states', () => {
       idempotencyKey: 'integration-test',
     });
 
-    expect(outcome.status).toBe('unsupported');
-    if (outcome.status !== 'unsupported') throw new Error('Expected unsupported social outcome.');
-    expect(outcome.reason).toMatch(/not implemented/i);
-    expect(listAdapters().every((adapter) => !adapter.configured)).toBe(true);
+    expect(outcome.status).toBe('not_configured');
+    if (outcome.status !== 'not_configured') throw new Error('Expected not_configured social outcome.');
+    expect(outcome.reason).toMatch(/not configured/i);
+  });
+
+  it('reports the Contra publishing capability as false (no public publishing API)', async () => {
+    const outcome = await getSocialAdapter('contra').publish({
+      organizationId: '00000000-0000-0000-0000-000000000001',
+      accountId: '00000000-0000-0000-0000-000000000002',
+      contentId: '00000000-0000-0000-0000-000000000003',
+      platform: 'contra',
+      caption: 'A prepared post',
+      mediaUrl: null,
+      idempotencyKey: 'integration-test-contra',
+    });
+
+    expect(outcome.status).toBe('not_configured');
+    expect(listAdapters().find((adapter) => adapter.platform === 'contra')?.capabilities.publish).toBe(false);
   });
 
   it('reports an absent email provider as not configured rather than sending', async () => {

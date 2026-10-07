@@ -7,7 +7,7 @@ const migrationsDir = resolve(root, 'supabase/migrations');
 const migration = (name: string) => readFileSync(resolve(migrationsDir, name), 'utf8');
 
 describe('Supabase migration contract', () => {
-  it('keeps the four baseline migrations in order and adds a corrective hardening migration', () => {
+  it('keeps the baseline migrations in order with hardening, CRM and storage follow-ups', () => {
     const names = readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')).sort();
     expect(names).toEqual([
       '0001_core_identity.sql',
@@ -15,7 +15,22 @@ describe('Supabase migration contract', () => {
       '0003_manager_agent.sql',
       '0004_rls_policies.sql',
       '0005_rls_hardening.sql',
+      '0006_clients_crm.sql',
+      '0007_content_storage.sql',
+      '0008_social_connections.sql',
+      '0009_publish_jobs.sql',
     ]);
+  });
+
+  it('adds the Phase 5 CRM fields without touching tenant protections', () => {
+    const crm = migration('0006_clients_crm.sql');
+    expect(crm).toContain('add column if not exists phone');
+    expect(crm).toContain("add value if not exists 'prospect'");
+    expect(crm).toContain("add value if not exists 'inactive'");
+    expect(crm).toContain("add value if not exists 'completed'");
+    expect(crm).toContain('client_activity_org_idx');
+    expect(crm).not.toContain('drop policy');
+    expect(crm).not.toContain('create policy');
   });
 
   it('defines auth-backed identity, memberships and organization helpers', () => {
@@ -58,7 +73,7 @@ describe('Supabase migration contract', () => {
     // `supabase db push` on a database that was set up by hand must also be
     // safe. Policies created inside the dynamic tenant loop use format('%I', …)
     // and are excluded by this pattern.
-    for (const name of ['0004_rls_policies.sql', '0005_rls_hardening.sql']) {
+    for (const name of ['0004_rls_policies.sql', '0005_rls_hardening.sql', '0008_social_connections.sql']) {
       const sql = migration(name);
       const created = [...sql.matchAll(/create policy\s+([a-z0-9_]+)/g)].map((match) => match[1]);
       expect(created.length).toBeGreaterThan(0);
@@ -68,6 +83,54 @@ describe('Supabase migration contract', () => {
         );
       }
     }
+  });
+
+  it('creates the private media bucket with organization-scoped storage RLS', () => {
+    const storage = migration('0007_content_storage.sql');
+    expect(storage).toContain('insert into storage.buckets');
+    expect(storage).toContain("'nibrexo-media'");
+    expect(storage).toContain('false,');
+    expect(storage).toContain('on conflict (id) do update');
+    expect(storage).toContain('nibrexo_media_member_select');
+    expect(storage).toContain('nibrexo_media_member_insert');
+    expect(storage).toContain('nibrexo_media_member_update');
+    expect(storage).toContain('nibrexo_media_admin_delete');
+    expect(storage).toContain('public.is_org_member');
+    expect(storage).toContain('public.is_org_admin');
+    expect(storage).toContain('storage.foldername(name)');
+    // Guarded for databases without the Supabase storage schema (PGlite).
+    expect(storage).toContain("to_regclass('storage.buckets')");
+    expect(storage).toContain("to_regclass('storage.objects')");
+  });
+
+  it('adds the Phase 8 publish jobs table with a single-flight claim function', () => {
+    const publish = migration('0009_publish_jobs.sql');
+    expect(publish).toContain('create table if not exists public.publish_jobs');
+    expect(publish).toContain('idempotency_key text not null unique');
+    expect(publish).toContain('publish_jobs_tenant_select');
+    expect(publish).toContain('publish_jobs_tenant_insert');
+    expect(publish).toContain('publish_jobs_tenant_update');
+    expect(publish).toContain('publish_jobs_admin_delete');
+    expect(publish).toContain('publish_jobs_tenant_identity_immutable');
+    expect(publish).toContain('claim_due_publish_jobs');
+    expect(publish).toContain('for update skip locked');
+    expect(publish).toContain('to service_role');
+  });
+
+  it('adds the Phase 7 social connection states and encrypted credential columns', () => {
+    const social = migration('0008_social_connections.sql');
+    expect(social).toContain('create table if not exists public.social_oauth_states');
+    expect(social).toContain('state_hash text not null unique');
+    expect(social).toContain('add column if not exists access_token_encrypted');
+    expect(social).toContain('add column if not exists refresh_token_encrypted');
+    expect(social).toContain('add column if not exists refresh_expires_at');
+    expect(social).toContain('add column if not exists connected_by');
+    expect(social).toContain('add column if not exists last_error');
+    expect(social).toContain('social_oauth_states_tenant_select');
+    expect(social).toContain('social_oauth_states_tenant_insert');
+    expect(social).toContain('social_oauth_states_tenant_update');
+    expect(social).toContain('social_oauth_states_admin_delete');
+    expect(social).toContain('social_oauth_states_tenant_identity_immutable');
   });
 
   it('never deletes data in any migration', () => {
