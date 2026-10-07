@@ -44,7 +44,24 @@ written to a disposable store.
    The current migration set is `0001` through `0005`; `0005` hardens RLS policies after the original four migrations.
 3. Set `NEXT_PUBLIC_SUPABASE_URL` and either `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (current Supabase/Vercel integration) or `NEXT_PUBLIC_SUPABASE_ANON_KEY` (legacy).
 4. For server-side jobs only, set `SUPABASE_SECRET_KEY` (current) or `SUPABASE_SERVICE_ROLE_KEY` (legacy); both remain server-only secrets.
-5. Create a profile and membership row for your user.
+5. Attach the first owner (see below) — an authenticated user without an organization
+   membership gets `NO_ORGANIZATION` on every workspace route, by design.
+
+### First owner (organization membership)
+
+There is no public signup flow: `memberships_admin_write` (`0004_rls_policies.sql`) only
+lets an existing owner/admin write membership rows, so bootstrapping the first owner is an
+operator action. Both commands below are idempotent — they reuse the existing organization,
+never create a duplicate profile/membership and never modify RLS.
+
+```bash
+# A. service-role CLI (reads .env.local; nothing is printed except ids/slug names)
+npm run auth:status    -- --email=<login email>            # read-only diagnosis
+npm run auth:provision -- --email=<login email> --apply    # attach as owner
+
+# B. no credentials: emit the equivalent SQL for the Supabase SQL editor
+npm run auth:status -- --email=<login email> --print-sql > provision_owner.sql
+```
 
 ### Enabling the AI layer
 
@@ -64,6 +81,9 @@ it never emulates a model response.
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | Vitest suite |
 | `npm run lint` | ESLint |
+| `npm run auth:status` | Read-only owner/organization/membership diagnosis (`-- --email=…`) |
+| `npm run auth:provision` | Attach the first owner (`-- --email=… --apply`); `--print-sql` needs no credentials |
+| `npm run verify:schema` | Runs migrations + owner bootstrap against embedded PostgreSQL (needs `npm i --no-save @electric-sql/pglite@0.2.17`) |
 
 ---
 
@@ -88,14 +108,16 @@ src/
     tools/              registered tool implementations (CRM, leads, research,
                         product, content, email, social, quality, reporting, system)
     integrations/       email provider and social platform adapters
-    auth/               actor resolution and permission guard
-    db/                 repository contract, Supabase + memory implementations
+    auth/               actor resolution, authorization records, permission guard,
+                        owner provisioning plan
   skills/<id>/skill.json    11 runtime skill definitions imported by the registry
   knowledge/            claim policy, medical safety, research standards,
                         product framework, quality rubric, brand voice, README
   config/               permissions.json, approval-policy.json
   types/                domain and Manager types
 supabase/migrations/    0001 identity · 0002 modules · 0003 manager · 0004 RLS · 0005 RLS hardening
+supabase/scripts/       provision_owner.sql — operator-only owner bootstrap (never auto-applied)
+scripts/                provision-owner CLI (diagnose → plan → apply → verify)
 tests/                  unit + integration suites
 docs/                   V2 spec, architecture, phase audit, Supabase verification runbook
 ```

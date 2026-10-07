@@ -14,7 +14,11 @@ import { serverEnv } from '@/lib/env';
 import { fail, ok, type ServiceResult } from '@/lib/result';
 import type { ActorContext, Membership, OrgRole, Profile, UUID } from '@/types/domain';
 import { createSupabaseServerClient } from '@/server/db/supabase';
-import { isOrgRole } from './permissions';
+import {
+  MEMBERSHIP_LOOKUP_FAILED_MESSAGE,
+  UNAUTHENTICATED_MESSAGE,
+  resolveActorFromRecords,
+} from './authorization';
 
 const DEV_USER_ID = '00000000-0000-0000-0000-0000000000d0';
 
@@ -56,7 +60,7 @@ export async function resolveActor(): Promise<ServiceResult<ActorContext>> {
   } = await client.auth.getUser();
 
   if (userError || !user) {
-    return fail('UNAUTHENTICATED', 'Your session has expired. Please sign in again.', {
+    return fail('UNAUTHENTICATED', UNAUTHENTICATED_MESSAGE, {
       severity: 'warning',
       retryable: false,
       errorClass: 'auth',
@@ -71,28 +75,27 @@ export async function resolveActor(): Promise<ServiceResult<ActorContext>> {
     .limit(1)
     .maybeSingle();
 
-  if (membershipError || !membershipRow) {
-    return fail(
-      'NO_ORGANIZATION',
-      'Your account is not a member of any organization. Ask an owner or admin to invite you.',
-      { severity: 'warning', retryable: false, errorClass: 'permission' },
-    );
+  // A read failure is not the same as "not a member": an unapplied migration or
+  // a permission error must never be reported as a missing invitation.
+  if (membershipError) {
+    return fail('MEMBERSHIP_LOOKUP_FAILED', MEMBERSHIP_LOOKUP_FAILED_MESSAGE, {
+      severity: 'error',
+      retryable: true,
+      errorClass: 'server',
+    });
   }
 
-  const role: OrgRole = isOrgRole(membershipRow.role) ? membershipRow.role : 'member';
-
+  // The profile is presentation data only; a missing row never blocks access.
   const { data: profile } = await client
     .from('profiles')
     .select('full_name')
     .eq('id', user.id)
     .maybeSingle();
 
-  return ok({
-    userId: user.id,
-    organizationId: String(membershipRow.organization_id),
-    role,
-    email: user.email ?? null,
-    fullName: (profile as Pick<Profile, 'full_name'> | null)?.full_name ?? null,
+  return resolveActorFromRecords({
+    user: { id: user.id, email: user.email ?? null },
+    membership: membershipRow,
+    profile: profile as Pick<Profile, 'full_name'> | null,
     isDevIdentity: false,
   });
 }
@@ -118,26 +121,25 @@ export async function resolveActorFromToken(token: string): Promise<ServiceResul
     });
   }
 
-  const { data: membershipRow } = await client
+  const { data: membershipRow, error: membershipError } = await client
     .from('memberships')
     .select('organization_id, role')
     .eq('user_id', data.user.id)
     .limit(1)
     .maybeSingle();
 
-  if (!membershipRow) {
-    return fail('NO_ORGANIZATION', 'No organization membership found.', {
-      errorClass: 'permission',
-      severity: 'warning',
+  if (membershipError) {
+    return fail('MEMBERSHIP_LOOKUP_FAILED', MEMBERSHIP_LOOKUP_FAILED_MESSAGE, {
+      severity: 'error',
+      retryable: true,
+      errorClass: 'server',
     });
   }
 
-  return ok({
-    userId: data.user.id,
-    organizationId: String(membershipRow.organization_id),
-    role: isOrgRole(membershipRow.role) ? membershipRow.role : 'member',
-    email: data.user.email ?? null,
-    fullName: null,
+  return resolveActorFromRecords({
+    user: { id: data.user.id, email: data.user.email ?? null },
+    membership: membershipRow,
+    profile: null,
     isDevIdentity: false,
   });
 }
