@@ -1,6 +1,19 @@
 /**
  * Email provider adapter (PDF #10 §14 Provider Architecture).
  *
+ * Verified against the official Resend API on 2026-10-07:
+ *  Base URL: https://api.resend.com
+ *  Auth: Authorization: Bearer re_... (RESEND_API_KEY; server-only, never logged)
+ *  Endpoint: POST /emails { from, to: [], subject, html, text, reply_to? }
+ *  Required headers: Content-Type, Authorization, User-Agent (403 without it),
+ *    Idempotency-Key optional (256 chars, 24h window, held server-side)
+ *  Success: { id: "<provider_message_id>" }
+ *  Errors: 401 missing key, 403 unverified domain, 422 missing field, 429
+ *    rate_limit_exceeded (10 req/s per team, retry-after), 5xx retryable.
+ *  Sender domain must be verified or onboarding@resend.dev — else 403.
+ * Sources: https://resend.com/docs/api-reference/emails/send-email
+ *          https://resend.com/docs/dashboard/emails/idempotency-keys
+ *
  * Production email is delivered through an external provider API. Provider
  * specifics live entirely inside this adapter, credentials stay server-side,
  * and provider message IDs are stored for tracing.
@@ -62,8 +75,9 @@ class ResendProvider implements EmailProvider {
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
+          'User-Agent': 'Nibrexo-OS/1.0 (+https://nibrexo.com)',
           // Provider-side idempotency so a retry cannot duplicate the email.
-          'Idempotency-Key': email.idempotencyKey,
+          'Idempotency-Key': email.idempotencyKey.slice(0, 256),
         },
         body: JSON.stringify({
           from: this.fromAddress,

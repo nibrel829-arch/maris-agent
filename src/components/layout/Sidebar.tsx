@@ -67,7 +67,7 @@ const NAVIGATION: NavGroup[] = [
     label: 'Operations',
     items: [
       { href: '/clients', label: 'Clients', module: 'clients', icon: UserGroupIcon },
-      { href: '/emails', label: 'Email', module: 'email', icon: DocumentIcon },
+      { href: '/email', label: 'Email', module: 'email', icon: DocumentIcon },
       { href: '/social', label: 'Channels', module: 'social', icon: PulseIcon },
       { href: '/inbox', label: 'Inbox', module: 'inbox', icon: InboxIcon },
     ],
@@ -102,6 +102,7 @@ export function Sidebar({ role }: { role: OrgRole }) {
 
   const isActive = (href: string) => {
     if (href === '/manager') return pathname === '/manager' || pathname === '/ai';
+    if (href === '/email') return pathname === '/email' || pathname.startsWith('/email/') || pathname === '/emails' || pathname.startsWith('/emails/');
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 
