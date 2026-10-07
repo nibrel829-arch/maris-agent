@@ -351,6 +351,7 @@ export type CallbackResult =
 interface FacebookSelectPayload {
   kind: 'facebook-select';
   userName: string;
+  grantedScopes: string[];
   pages: Array<{ id: string; name: string; tasks: string[]; tokenEnc: string }>;
 }
 
@@ -360,6 +361,8 @@ function isFacebookSelectPayload(value: unknown): value is FacebookSelectPayload
   return (
     record.kind === 'facebook-select' &&
     typeof record.userName === 'string' &&
+    Array.isArray(record.grantedScopes) &&
+    record.grantedScopes.every((scope) => typeof scope === 'string') &&
     Array.isArray(record.pages) &&
     record.pages.every(
       (page) =>
@@ -436,7 +439,14 @@ async function upsertCredential(
     expiresAt(tokens.refreshExpiresIn) ?? existing?.refresh_expires_at ?? null;
   const row = {
     credential_ref: TOKEN_KEY_VERSION,
-    scopes: tokens.grantedScopes.length > 0 ? tokens.grantedScopes : [...provider.scopes],
+    scopes:
+      tokens.grantedScopes.length > 0
+        ? tokens.grantedScopes
+        : existing
+          ? existing.scopes
+          : provider.platform === 'facebook' || provider.platform === 'youtube'
+            ? []
+            : [...provider.scopes],
     expires_at: expiresAtValue,
     access_token_encrypted: accessTokenEncrypted,
     refresh_token_encrypted: refreshTokenEncrypted,
@@ -556,6 +566,7 @@ export async function completeCallback(
     const payload: FacebookSelectPayload = {
       kind: 'facebook-select',
       userName: extra?.userName ?? 'Facebook user',
+      grantedScopes: tokens.grantedScopes,
       pages: candidates.map((page) => ({
         id: page.id,
         name: page.name,
@@ -653,7 +664,7 @@ export async function selectFacebookPage(
     refreshToken: null,
     expiresIn: null,
     refreshExpiresIn: null,
-    grantedScopes: [...provider.scopes],
+    grantedScopes: row.payload.grantedScopes,
     providerUserId: page.id,
   });
   await markStateUsed(repo, row, true);

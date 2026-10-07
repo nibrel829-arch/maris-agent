@@ -55,6 +55,7 @@ export const FACEBOOK_PERMISSIONS = [
   'pages_manage_metadata',
   'pages_manage_posts',
   'pages_read_engagement',
+  'pages_read_user_content',
 ] as const;
 
 export interface FacebookPageCandidate {
@@ -163,15 +164,30 @@ export const facebookProvider: OAuthProvider = {
       isInvalidGrant: isDeadGrant,
     });
 
+    // Read the provider's actual grant rather than assuming every requested
+    // Pages permission was accepted. Inbox services gate on this exact list.
+    const permissionsUrl =
+      `${GRAPH_URL}/me/permissions?` +
+      new URLSearchParams({ fields: 'permission,status', access_token: userToken }).toString();
+    const permissionPayload = (await parseProviderJson(await http(permissionsUrl, { method: 'GET' }), {
+      platform: 'Facebook',
+      isInvalidGrant: isDeadGrant,
+    })) as Record<string, unknown>;
+    const permissionRows = Array.isArray(permissionPayload.data) ? permissionPayload.data : [];
+    const grantedScopes = permissionRows.flatMap((entry) => {
+      if (!entry || typeof entry !== 'object') return [];
+      const permission = (entry as Record<string, unknown>).permission;
+      const status = (entry as Record<string, unknown>).status;
+      return typeof permission === 'string' && status === 'granted' ? [permission] : [];
+    });
+
     return {
       accessToken: userToken,
       refreshToken: null,
       expiresIn: userTokenExpiresIn,
       refreshExpiresIn: null,
-      // The code flow does not echo granted permissions; the stored scopes
-      // are the requested set (see service), proven effective by the
-      // /accounts call succeeding.
-      grantedScopes: [...FACEBOOK_PERMISSIONS],
+      // Keep the provider's permission statuses, not just requested scopes.
+      grantedScopes,
       providerUserId: userId,
       extra: {
         userId,

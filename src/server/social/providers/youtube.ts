@@ -37,8 +37,10 @@ const USERINFO_URL = 'https://openidconnect.googleapis.com/v1/userinfo';
 const REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
 
 const YOUTUBE_UPLOAD_SCOPE = 'https://www.googleapis.com/auth/youtube.upload';
+/** YouTube comments.list/commentThreads.list and comments.insert require this scope. */
+export const YOUTUBE_INBOX_SCOPE = 'https://www.googleapis.com/auth/youtube.force-ssl';
 
-export const YOUTUBE_SCOPES = ['openid', YOUTUBE_UPLOAD_SCOPE] as const;
+export const YOUTUBE_SCOPES = ['openid', YOUTUBE_UPLOAD_SCOPE, YOUTUBE_INBOX_SCOPE] as const;
 
 function toTokenSet(payload: unknown, previousRefreshToken: string | null = null): ProviderTokenSet {
   const data = (payload ?? {}) as Record<string, unknown>;

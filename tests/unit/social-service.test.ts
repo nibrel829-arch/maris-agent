@@ -260,6 +260,13 @@ describe('Facebook Page selection', () => {
     { match: (url: string) => url.includes('grant_type=fb_exchange_token'), status: 200, body: { access_token: 'LONG-USER-SECRET', expires_in: 5183944 } },
     { match: (url: string) => url.includes('/me?'), status: 200, body: { id: 'U1', name: 'Ada FB' } },
     { match: urlContains('/accounts'), status: 200, body: { data: pages } },
+    { match: urlContains('/permissions?'), status: 200, body: { data: [
+          { permission: 'pages_show_list', status: 'granted' },
+          { permission: 'pages_manage_metadata', status: 'granted' },
+          { permission: 'pages_manage_posts', status: 'granted' },
+          { permission: 'pages_read_engagement', status: 'granted' },
+          { permission: 'pages_read_user_content', status: 'granted' },
+        ] } },
   ];
 
   it('auto-completes a single usable Page', async () => {
@@ -420,6 +427,13 @@ describe('Social token refresh', () => {
       { match: (url: string) => url.includes('grant_type=fb_exchange_token'), status: 200, body: { access_token: 'L', expires_in: 2 } },
       { match: (url: string) => url.includes('/me?'), status: 200, body: { id: 'U', name: 'U' } },
       { match: urlContains('/accounts'), status: 200, body: { data: [{ id: 'P', name: 'P', access_token: 'PT', tasks: ['CREATE_CONTENT'] }] } },
+      { match: urlContains('/permissions?'), status: 200, body: { data: [
+          { permission: 'pages_show_list', status: 'granted' },
+          { permission: 'pages_manage_metadata', status: 'granted' },
+          { permission: 'pages_manage_posts', status: 'granted' },
+          { permission: 'pages_read_engagement', status: 'granted' },
+          { permission: 'pages_read_user_content', status: 'granted' },
+        ] } },
     ]);
     const completed = await completeCallback(
       owner,

@@ -59,7 +59,7 @@ export async function GET(_request: Request, extra: RouteParams): Promise<NextRe
   }
 
   const safeName = resolved.filename.replace(/["\r\n]/g, '');
-  return new NextResponse(resolved.bytes, {
+  return new NextResponse(resolved.bytes as unknown as BodyInit, {
     status: 200,
     headers: {
       'Content-Type': resolved.mimeType,

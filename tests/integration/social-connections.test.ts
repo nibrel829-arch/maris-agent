@@ -106,6 +106,13 @@ describe('Social connection lifecycles', () => {
             { id: 'PB', name: 'Page B', access_token: 'TOKEN-B', tasks: ['CREATE_CONTENT'] },
           ] },
         },
+        { match: urlContains('/permissions?'), status: 200, body: { data: [
+          { permission: 'pages_show_list', status: 'granted' },
+          { permission: 'pages_manage_metadata', status: 'granted' },
+          { permission: 'pages_manage_posts', status: 'granted' },
+          { permission: 'pages_read_engagement', status: 'granted' },
+          { permission: 'pages_read_user_content', status: 'granted' },
+        ] } },
       ]),
     });
     expect(completed.ok).toBe(true);
