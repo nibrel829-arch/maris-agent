@@ -13,7 +13,11 @@ const STATUS_BY_CLASS: Record<string, number> = {
 };
 
 export function socialFailure(error: ManagerIssue) {
-  if (error.code === 'SOCIAL_NOT_FOUND' || error.code === 'SOCIAL_STATE_INVALID') {
+  if (
+    error.code === 'SOCIAL_NOT_FOUND' ||
+    error.code === 'SOCIAL_STATE_INVALID' ||
+    error.code === 'PUBLISH_NOT_FOUND'
+  ) {
     return { ok: false as const, status: 404, error };
   }
   return { ok: false as const, status: STATUS_BY_CLASS[error.errorClass] ?? 500, error };

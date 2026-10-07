@@ -14,9 +14,11 @@
  *    `GET …/oauth/access_token?grant_type=fb_exchange_token&client_id&client_secret&fb_exchange_token=…`
  *    (server-side only); then long-lived Page tokens (no expiry date) via
  *    `GET …/{user-id}/accounts` with the long-lived user token.
- *  - Permissions (Pages API getting-started): `pages_show_list`,
- *    `pages_manage_metadata`, `pages_manage_posts`,
- *    `pages_manage_read_engagement`. Publishing targets Pages only
+ *  - Permissions (Pages API reference, re-verified Oct 2026):
+ *    `pages_show_list`, `pages_manage_metadata`, `pages_manage_posts`,
+ *    `pages_read_engagement` (read-back for verification; the previously
+ *    requested `pages_manage_read_engagement` is not a real permission and
+ *    was corrected in Phase 8). Publishing targets Pages only
  *    (`POST /{page-id}/feed`) — personal-profile posting does not exist.
  *
  * Connection model: a Nibrexo "Facebook account" is a Facebook Page. The
@@ -52,7 +54,7 @@ export const FACEBOOK_PERMISSIONS = [
   'pages_show_list',
   'pages_manage_metadata',
   'pages_manage_posts',
-  'pages_manage_read_engagement',
+  'pages_read_engagement',
 ] as const;
 
 export interface FacebookPageCandidate {

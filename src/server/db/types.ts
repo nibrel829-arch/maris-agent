@@ -23,6 +23,7 @@ import type {
   EmailTemplate,
   Lead,
   ProductConcept,
+  PublishJob,
   ResearchBrief,
   SocialAccount,
   SocialCredential,
@@ -55,6 +56,17 @@ export interface Collection<T extends BaseRow> {
   get(id: UUID, organizationId: UUID): Promise<T | null>;
   /** Tenant-scoped delete. Resolves true only when a row was removed. */
   delete(id: UUID, organizationId: UUID): Promise<boolean>;
+}
+
+/**
+ * Publish-job queue. `findByIdempotencyKey` resolves retried submissions to
+ * the existing row; `claimDueJobs` hands each due row to exactly one sweeper
+ * (Postgres: `claim_due_publish_jobs()` with SKIP LOCKED; memory: atomic
+ * in-process claim). Claiming bumps `attempts` and sets the lock lease.
+ */
+export interface PublishJobCollection extends Collection<PublishJob> {
+  findByIdempotencyKey(organizationId: UUID, key: string): Promise<PublishJob | null>;
+  claimDueJobs(nowIso: string, lockSeconds: number, limit: number): Promise<PublishJob[]>;
 }
 
 export interface CampaignPlan extends BaseRow {
@@ -138,6 +150,7 @@ export interface NibrexoRepository {
   socialAccounts: Collection<SocialAccount>;
   socialCredentials: Collection<SocialCredential>;
   socialOauthStates: Collection<SocialOAuthState>;
+  publishJobs: PublishJobCollection;
   researchBriefs: Collection<ResearchBrief>;
   productConcepts: Collection<ProductConcept>;
   visualConcepts: Collection<VisualConcept>;

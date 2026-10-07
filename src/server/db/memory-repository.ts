@@ -7,8 +7,8 @@
  */
 
 import { newId } from '@/lib/id';
-import type { UUID } from '@/types/domain';
-import type { BaseRow, Collection, NibrexoRepository } from './types';
+import type { PublishJob, UUID } from '@/types/domain';
+import type { BaseRow, Collection, NibrexoRepository, PublishJobCollection } from './types';
 import type { ManagerTaskSnapshot } from '@/types/manager';
 
 type Store = Map<string, Map<string, Record<string, unknown>>>;
@@ -80,6 +80,69 @@ function createCollection<T extends BaseRow>(store: Store, table: string): Colle
   };
 }
 
+/**
+ * Publish-job queue with the same claim semantics as
+ * `claim_due_publish_jobs()` (single-threaded claim = atomic here).
+ */
+function createPublishJobCollection(store: Store): PublishJobCollection {
+  const base = createCollection<PublishJob>(store, 'publish_jobs');
+  const table = (): Map<string, Record<string, unknown>> => {
+    let t = store.get('publish_jobs');
+    if (!t) {
+      t = new Map();
+      store.set('publish_jobs', t);
+    }
+    return t;
+  };
+
+  return {
+    ...base,
+    async findByIdempotencyKey(organizationId, key) {
+      for (const row of table().values()) {
+        if (row.organization_id === organizationId && row.idempotency_key === key) {
+          return row as unknown as PublishJob;
+        }
+      }
+      return null;
+    },
+    async claimDueJobs(nowIso, lockSeconds, limit) {
+      const now = Date.parse(nowIso);
+      const leaseMs = lockSeconds * 1000;
+      const due = [...table().values()].filter((row) => {
+        if ((row.attempts as number) >= (row.max_attempts as number)) return false;
+        const lockedAt = row.locked_at ? Date.parse(String(row.locked_at)) : NaN;
+        const locked = Number.isFinite(lockedAt) && now - (lockedAt as number) < leaseMs;
+        if (locked) return false;
+        const status = String(row.status);
+        if (status === 'queued') return Date.parse(String(row.run_at)) <= now;
+        if (status === 'verifying' || status === 'scheduled') {
+          return row.next_poll_at != null && Date.parse(String(row.next_poll_at)) <= now;
+        }
+        if (status === 'publishing') return Number.isFinite(lockedAt);
+        return false;
+      });
+      due.sort((a, b) => {
+        const da = Date.parse(String(a.next_poll_at ?? a.run_at));
+        const db = Date.parse(String(b.next_poll_at ?? b.run_at));
+        return da - db;
+      });
+      const claimed: PublishJob[] = [];
+      for (const row of due.slice(0, Math.max(0, limit))) {
+        const next = {
+          ...row,
+          status: row.status === 'queued' ? 'publishing' : row.status,
+          locked_at: nowIso,
+          attempts: (row.attempts as number) + 1,
+          updated_at: nowIso,
+        };
+        table().set(String(row.id), next);
+        claimed.push(next as unknown as PublishJob);
+      }
+      return claimed;
+    },
+  };
+}
+
 export function createMemoryRepository(seed?: Store): NibrexoRepository {
   const store: Store = seed ? new Map(seed) : new Map();
 
@@ -132,6 +195,7 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
     socialAccounts: collection('social_accounts'),
     socialCredentials: collection('social_credentials'),
     socialOauthStates: collection('social_oauth_states'),
+    publishJobs: createPublishJobCollection(store),
     researchBriefs: collection('research_briefs'),
     productConcepts: collection('product_concepts'),
     visualConcepts: collection('visual_concepts'),

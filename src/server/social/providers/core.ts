@@ -21,12 +21,19 @@ export interface ProviderHttpResponse {
   status: number;
   json(): Promise<unknown>;
   text(): Promise<string>;
+  /**
+   * Response headers (lower-cased names). Present when the provider returns
+   * its reference in a header — LinkedIn returns the new post URN in
+   * `x-restli-id` on 201 (Posts API, verified Oct 2026).
+   */
+  headers?: Record<string, string>;
 }
 
 export interface ProviderHttpInit {
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PUT';
   headers?: Record<string, string>;
-  body?: string;
+  /** String bodies for JSON/form posts; bytes for media uploads. */
+  body?: string | Uint8Array;
 }
 
 export type ProviderHttp = (url: string, init: ProviderHttpInit) => Promise<ProviderHttpResponse>;
@@ -45,10 +52,15 @@ export function defaultProviderHttp(timeoutMs = 15_000): ProviderHttp {
       body: init.body,
       signal: AbortSignal.timeout(timeoutMs),
     });
+    const headers: Record<string, string> = {};
+    response.headers.forEach((value, name) => {
+      headers[name.toLowerCase()] = value;
+    });
     return {
       status: response.status,
       json: () => response.json() as Promise<unknown>,
       text: () => response.text(),
+      headers,
     };
   };
 }
@@ -233,6 +245,12 @@ export function isStandardInvalidGrant(payload: unknown, status: number): boolea
   if (status !== 400 && status !== 401) return false;
   const record = asRecord(payload);
   return record?.error === 'invalid_grant';
+}
+
+/** Case-insensitive response-header lookup. Returns null when absent. */
+export function responseHeader(response: ProviderHttpResponse, name: string): string | null {
+  const value = response.headers?.[name.toLowerCase()];
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 export function requiredString(record: Record<string, unknown>, key: string, platform: string): string {

@@ -3,7 +3,11 @@
  */
 
 import { z } from 'zod';
-import { getSocialAdapter } from '@/server/integrations/social/adapter';
+import {
+  configureSocialAdapters,
+  getSocialAdapter,
+} from '@/server/integrations/social/adapter';
+import { getRequestMediaStorage } from '@/server/content/storage';
 import medicalSafety from '@/knowledge/medical-safety.json';
 import qualityRubric from '@/knowledge/quality-rubric.json';
 import { PLATFORM_CAPABILITY_RULE } from '@/server/integrations/social/adapter';
@@ -51,6 +55,16 @@ export const publishPostTool = defineTool({
       };
     }
 
+    const storageResult = await getRequestMediaStorage();
+    if (!storageResult.ok) {
+      return {
+        status: 'failed' as const,
+        platform: account.platform,
+        reason: 'Media storage is not configured.',
+        retryable: false,
+      };
+    }
+    configureSocialAdapters({ repo: ctx.repo, actor: ctx.actor, storage: storageResult.data });
     const adapter = getSocialAdapter(account.platform as SocialPlatform);
     const outcome = await adapter.publish({
       organizationId: ctx.organizationId,
@@ -63,7 +77,13 @@ export const publishPostTool = defineTool({
     });
 
     const status: ContentStatus =
-      outcome.status === 'published' ? 'PUBLISHED' : outcome.status === 'scheduled' ? 'SCHEDULED' : 'FAILED';
+      outcome.status === 'published'
+        ? 'PUBLISHED'
+        : outcome.status === 'scheduled'
+          ? 'SCHEDULED'
+          : outcome.status === 'processing'
+            ? 'PUBLISHING'
+            : 'FAILED';
 
     const updated = await ctx.repo.contentItems.update(input.contentId, ctx.organizationId, {
       status,
@@ -93,6 +113,20 @@ export const schedulePostTool = defineTool({
     const account = await ctx.repo.socialAccounts.get(input.accountId, ctx.organizationId);
     if (!account) throw new Error('Social account not found or not in this organization.');
 
+    const adapterStorage = await getRequestMediaStorage();
+    if (!adapterStorage.ok) {
+      return {
+        outcome: {
+          status: 'failed' as const,
+          platform: account.platform,
+          reason: 'Media storage is not configured.',
+          retryable: false,
+        },
+        timezone: input.timezone,
+        note: 'Content was not scheduled. Status below reflects the adapter result.',
+      };
+    }
+    configureSocialAdapters({ repo: ctx.repo, actor: ctx.actor, storage: adapterStorage.data });
     const adapter = getSocialAdapter(account.platform as SocialPlatform);
     const outcome = await adapter.schedule({
       organizationId: ctx.organizationId,

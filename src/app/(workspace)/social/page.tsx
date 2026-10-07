@@ -4,10 +4,12 @@ import { ArrowRightIcon, PulseIcon } from '@/components/ui/icons';
 import { PageHeader } from '@/components/cockpit/PageHeader';
 import { ConnectButton, DisconnectButton, RefreshButton } from '@/features/social/ConnectionButtons';
 import { SocialNotices } from '@/features/social/SocialNotices';
+import { PublishJobsList } from '@/features/social/PublishJobsList';
 import { resolveActor } from '@/server/auth/actor';
 import { getRequestRepository } from '@/server/db';
 import { checkPermission } from '@/server/auth/permissions';
 import { listAccounts, type SocialAccountView } from '@/server/social/service';
+import { listPublishJobs } from '@/server/social/publish/service';
 import { publicEnv } from '@/lib/env';
 import { ConfigurationRequired } from '@/components/layout/ConfigurationRequired';
 
@@ -65,11 +67,13 @@ export default async function SocialPage({
   const canConnect = checkPermission(actor, { module: 'social', action: 'create' }).allowed;
   const canRefresh = checkPermission(actor, { module: 'social', action: 'edit' }).allowed;
   const canDisconnect = checkPermission(actor, { module: 'social', action: 'delete' }).allowed;
+  const canPublish = checkPermission(actor, { module: 'social', action: 'publish' }).allowed;
 
-  const [connections, plans, community] = await Promise.all([
+  const [connections, plans, community, queue] = await Promise.all([
     listAccounts(actor, repo),
     repo.socialPlans.list(actor.organizationId, { limit: 50 }),
     repo.communityPlans.list(actor.organizationId, { limit: 50 }),
+    listPublishJobs(actor, repo, { limit: 20, offset: 0 }),
   ]);
 
   if (!connections.ok) {
@@ -160,6 +164,43 @@ export default async function SocialPage({
                   </li>
                 ))}
               </ul>
+            )}
+          </Card>
+
+          <Card
+            title={`Publishing queue (${queue.ok ? queue.data.total : 0})`}
+            action={
+              canPublish ? (
+                <Link className="text-xs font-medium text-brand-300 hover:text-brand-200" href="/content">
+                  Publish from the library
+                </Link>
+              ) : null
+            }
+          >
+            {!queue.ok ? (
+              <EmptyState
+                description={queue.error.message}
+                icon={<PulseIcon size={19} />}
+                title="Could not load the queue"
+              />
+            ) : (
+              <PublishJobsList
+                accounts={Object.fromEntries(
+                  accounts.map((account) => [
+                    account.id,
+                    {
+                      name: account.name,
+                      platform: account.platform,
+                      platformLabel:
+                        providers.find((provider) => provider.platform === account.platform)?.label ??
+                        account.platform,
+                    },
+                  ]),
+                )}
+                canPublish={canPublish}
+                jobs={queue.data.jobs}
+                linkContent
+              />
             )}
           </Card>
 

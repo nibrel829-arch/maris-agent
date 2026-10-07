@@ -132,6 +132,30 @@ function memoryMediaStorage(): MediaStorage {
  * rules: memory only outside production, otherwise the session-bound
  * Supabase client (RLS enforced), otherwise a structured NOT_CONFIGURED.
  */
+/**
+ * Byte storage for server-side job execution (publish sweeper). Mirrors
+ * `getJobRepository`: memory outside production, otherwise the service-role
+ * Supabase client. Never exposed to browser-triggered request handlers.
+ */
+export async function getJobMediaStorage(): Promise<ServiceResult<MediaStorage>> {
+  const env = serverEnv();
+
+  if (env.dataBackend === 'memory') {
+    return ok(memoryMediaStorage());
+  }
+
+  const { createSupabaseAdminClient } = await import('@/server/db/supabase');
+  const client = createSupabaseAdminClient();
+  if (!client) {
+    return fail(
+      'SUPABASE_SERVICE_ROLE_NOT_CONFIGURED',
+      'Server-side jobs require SUPABASE_SERVICE_ROLE_KEY. This is a server-only secret.',
+      { severity: 'warning', retryable: false, errorClass: 'not_configured' },
+    );
+  }
+  return ok(createSupabaseMediaStorage(client));
+}
+
 export async function getRequestMediaStorage(): Promise<ServiceResult<MediaStorage>> {
   const env = serverEnv();
 

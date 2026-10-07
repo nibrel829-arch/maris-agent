@@ -37,5 +37,6 @@ export const urlContains =
     url.includes(part);
 
 export function formBody(init: ProviderHttpInit): URLSearchParams {
-  return new URLSearchParams(init.body ?? '');
+  const body = typeof init.body === 'string' ? init.body : '';
+  return new URLSearchParams(body);
 }

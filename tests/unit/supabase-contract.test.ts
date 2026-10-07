@@ -18,6 +18,7 @@ describe('Supabase migration contract', () => {
       '0006_clients_crm.sql',
       '0007_content_storage.sql',
       '0008_social_connections.sql',
+      '0009_publish_jobs.sql',
     ]);
   });
 
@@ -100,6 +101,20 @@ describe('Supabase migration contract', () => {
     // Guarded for databases without the Supabase storage schema (PGlite).
     expect(storage).toContain("to_regclass('storage.buckets')");
     expect(storage).toContain("to_regclass('storage.objects')");
+  });
+
+  it('adds the Phase 8 publish jobs table with a single-flight claim function', () => {
+    const publish = migration('0009_publish_jobs.sql');
+    expect(publish).toContain('create table if not exists public.publish_jobs');
+    expect(publish).toContain('idempotency_key text not null unique');
+    expect(publish).toContain('publish_jobs_tenant_select');
+    expect(publish).toContain('publish_jobs_tenant_insert');
+    expect(publish).toContain('publish_jobs_tenant_update');
+    expect(publish).toContain('publish_jobs_admin_delete');
+    expect(publish).toContain('publish_jobs_tenant_identity_immutable');
+    expect(publish).toContain('claim_due_publish_jobs');
+    expect(publish).toContain('for update skip locked');
+    expect(publish).toContain('to service_role');
   });
 
   it('adds the Phase 7 social connection states and encrypted credential columns', () => {

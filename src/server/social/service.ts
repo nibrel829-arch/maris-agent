@@ -772,6 +772,80 @@ export async function refreshAccount(
   return ok(toView(updated, credential));
 }
 
+export type FreshTokenResult =
+  | { ok: true; accessToken: string; refreshed: boolean }
+  | { ok: false; reauth: true; reason: string }
+  | { ok: false; reauth: false; reason: string; retryable: boolean };
+
+/**
+ * Resolves a usable access token for server-side execution (Phase 8
+ * publishing). Decrypts the stored token and, when it is expired (60s skew),
+ * refreshes inline through the verified provider flow — the same upsert path
+ * as `refreshAccount`, without its user-facing view/audit. Never throws for
+ * provider failures: they return a reason the executor can record.
+ *
+ * No permission check here by design: the caller (job creation, sweeper) owns
+ * authorization — creation required social.publish, the sweeper requires
+ * CRON_SECRET. This helper only touches the given account's own credential.
+ */
+export async function ensureFreshAccessToken(
+  repo: NibrexoRepository,
+  actor: ActorContext,
+  account: SocialAccount,
+  keyring: TokenKeyring,
+  http: ProviderHttp,
+  now: Date = new Date(),
+): Promise<FreshTokenResult> {
+  const provider = getOAuthProvider(account.platform);
+  if (!provider) {
+    return { ok: false, reauth: false, reason: 'This platform does not support account connections.', retryable: false };
+  }
+  const stored = await findCredential(repo, actor.organizationId, account.id);
+  if (!stored?.access_token_encrypted) {
+    return { ok: false, reauth: true, reason: 'Stored credentials are missing; reconnect the account.' };
+  }
+  const accessToken = decryptToken(stored.access_token_encrypted, keyring);
+  if (!accessToken) {
+    return { ok: false, reauth: true, reason: 'Stored credentials cannot be read; reconnect the account.' };
+  }
+  const expiresAtMs = stored.expires_at ? Date.parse(stored.expires_at) : NaN;
+  if (Number.isFinite(expiresAtMs) && expiresAtMs > now.getTime() + 60_000) {
+    return { ok: true, accessToken, refreshed: false };
+  }
+  if (!Number.isFinite(expiresAtMs) && !provider.supportsRefresh) {
+    // Non-expiring token without a refresh flow (Facebook Page tokens).
+    return { ok: true, accessToken, refreshed: false };
+  }
+
+  // Expired (or refreshable with unknown expiry): refresh inline when the
+  // provider supports it.
+  if (!provider.supportsRefresh) {
+    return { ok: false, reauth: true, reason: `${provider.label}: tokens cannot be refreshed programmatically; reconnect the account instead.` };
+  }
+  const refreshToken = stored.refresh_token_encrypted
+    ? decryptToken(stored.refresh_token_encrypted, keyring)
+    : null;
+  if (!refreshToken) {
+    return { ok: false, reauth: true, reason: 'The stored refresh token is missing; reconnect the account.' };
+  }
+  const credentials = getProviderCredentials(account.platform as ConnectablePlatform);
+  if (!credentials) {
+    return { ok: false, reauth: false, reason: `${provider.label} OAuth credentials are not configured on the server.`, retryable: false };
+  }
+  let tokens: ProviderTokenSet;
+  try {
+    tokens = await provider.refreshToken({ credentials, accessToken, refreshToken, http });
+  } catch (error) {
+    if (error instanceof ProviderError && (error.code === 'INVALID_GRANT' || error.code === 'REFRESH_NOT_GRANTED')) {
+      return { ok: false, reauth: true, reason: error.message };
+    }
+    const detail = error instanceof Error ? error.message : 'unknown error';
+    return { ok: false, reauth: false, reason: `${provider.label}: refresh failed (${detail.slice(0, 160)}).`, retryable: true };
+  }
+  await upsertCredential(repo, actor, account, keyring, provider, tokens);
+  return { ok: true, accessToken: tokens.accessToken, refreshed: true };
+}
+
 export async function disconnectAccount(
   actor: ActorContext,
   repo: NibrexoRepository,

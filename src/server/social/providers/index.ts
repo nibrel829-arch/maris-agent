@@ -31,6 +31,16 @@ export type {
 } from './core';
 export { ProviderError } from './core';
 export { defaultProviderHttp } from './core';
+export {
+  numberField,
+  parseProviderJson,
+  providerErrorMessage,
+  requiredString,
+  responseHeader,
+  splitScopes,
+  stringField,
+  toForm,
+} from './core';
 export type { FacebookPageCandidate, FacebookExchangeExtra } from './facebook';
 export { usablePages } from './facebook';
 

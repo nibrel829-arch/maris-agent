@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Badge, Card, EmptyState, KeyValue } from '@/components/ui/primitives';
+import { Card, EmptyState, KeyValue } from '@/components/ui/primitives';
 import { ArrowRightIcon, DocumentIcon } from '@/components/ui/icons';
 import { PageHeader } from '@/components/cockpit/PageHeader';
 import { EditContentForm } from '@/features/content/EditContentForm';
@@ -8,22 +8,20 @@ import { DeleteContentButton } from '@/features/content/DeleteContentButton';
 import { ContentStatusBadge } from '@/features/content/ContentStatusBadge';
 import { MediaPreview, formatBytes } from '@/features/content/MediaPreview';
 import { isDraftLifecycleStatus, platformLabel } from '@/features/content/content-statuses';
+import { PublishComposer, type PublishTargetAccount } from '@/features/social/PublishComposer';
+import { PublishJobsList } from '@/features/social/PublishJobsList';
 import { resolveActor } from '@/server/auth/actor';
 import { getRequestRepository } from '@/server/db';
 import { checkPermission } from '@/server/auth/permissions';
 import { getContentItem, getMedia, toMediaListItem } from '@/server/content/service';
+import { listAccounts } from '@/server/social/service';
+import { listPublishJobs } from '@/server/social/publish/service';
 import { contentIdSchema } from '@/server/content/validation';
 import { publicEnv } from '@/lib/env';
 import { ConfigurationRequired } from '@/components/layout/ConfigurationRequired';
-import type { SocialPlatform } from '@/types/domain';
+import type { PublishJob, SocialPlatform } from '@/types/domain';
 
 export const dynamic = 'force-dynamic';
-
-const FUTURE_ATTACHMENTS = [
-  { label: 'Schedule', phase: 'Phase 8' },
-  { label: 'Publish', phase: 'Phase 8' },
-  { label: 'Delivery results', phase: 'Phase 8' },
-] as const;
 
 /** Extracts the media id from an internal file-route URL, if that is what the link is. */
 function internalMediaId(mediaUrl: string | null): string | null {
@@ -100,6 +98,45 @@ export default async function ContentDetailPage({
   const item = detail.data;
   const canEdit = checkPermission(actor, { module: 'content', action: 'edit' }).allowed;
   const canDelete = checkPermission(actor, { module: 'content', action: 'delete' }).allowed;
+  const canSeePublishing = checkPermission(actor, { module: 'social', action: 'view' }).allowed;
+  const canPublish = checkPermission(actor, { module: 'social', action: 'publish' }).allowed;
+
+  // Publishing data is auxiliary: a failure narrows this section, never the
+  // whole page.
+  let targetAccounts: PublishTargetAccount[] = [];
+  const accountInfo: Record<string, { name: string; platform: string; platformLabel: string }> = {};
+  let jobs: PublishJob[] = [];
+  let publishingError: string | null = null;
+  if (canSeePublishing) {
+    const [connections, queue] = await Promise.all([
+      listAccounts(actor, repo),
+      listPublishJobs(actor, repo, { contentId: id, limit: 50, offset: 0 }),
+    ]);
+    if (!connections.ok) {
+      publishingError = connections.error.message;
+    } else {
+      for (const account of connections.data.accounts) {
+        accountInfo[account.id] = {
+          name: account.name,
+          platform: account.platform,
+          platformLabel: platformLabel(account.platform),
+        };
+      }
+      targetAccounts = connections.data.accounts
+        .filter((account) => account.status === 'connected' && account.capabilities.publish)
+        .map((account) => ({
+          id: account.id,
+          platform: account.platform,
+          platformLabel: platformLabel(account.platform),
+          name: account.name,
+        }));
+    }
+    if (!queue.ok) {
+      publishingError = queue.error.message;
+    } else {
+      jobs = queue.data.jobs;
+    }
+  }
 
   // Resolve an internal media link to its row (same organization only) so the
   // detail page can render the right player. External links stay plain links.
@@ -177,7 +214,7 @@ export default async function ContentDetailPage({
             <Card title="Lifecycle">
               <LifecycleButtons id={item.id} status={item.status} />
               <p className="mt-3 text-[11px] leading-4 text-slate-500">
-                Drafts move between Draft and Ready here. Scheduling and publishing arrive in Phase 8.
+                Drafts move between Draft and Ready here. Publish or schedule below once an item is ready.
               </p>
             </Card>
           ) : null}
@@ -196,16 +233,33 @@ export default async function ContentDetailPage({
             </Card>
           )}
 
-          <Card title="Publishing">
-            <ul className="divide-y divide-surface-border/65">
-              {FUTURE_ATTACHMENTS.map((attachment) => (
-                <li className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0" key={attachment.label}>
-                  <span className="text-sm text-slate-400">{attachment.label}</span>
-                  <Badge>{attachment.phase}</Badge>
-                </li>
-              ))}
-            </ul>
-          </Card>
+          {canSeePublishing ? (
+            <>
+              <Card title="Publish">
+                {publishingError ? (
+                  <p className="text-sm leading-6 text-amber-100/90">{publishingError}</p>
+                ) : (
+                  <PublishComposer accounts={targetAccounts} canPublish={canPublish} contentId={item.id} />
+                )}
+              </Card>
+
+              <Card title={`Delivery results (${jobs.length})`}>
+                {publishingError ? (
+                  <p className="text-sm leading-6 text-amber-100/90">{publishingError}</p>
+                ) : (
+                  <PublishJobsList accounts={accountInfo} canPublish={canPublish} jobs={jobs} />
+                )}
+              </Card>
+            </>
+          ) : (
+            <Card title="Publishing">
+              <EmptyState
+                description="Your role cannot view publishing."
+                icon={<DocumentIcon size={19} />}
+                title="No access"
+              />
+            </Card>
+          )}
 
           {canDelete ? (
             <Card title="Danger zone">

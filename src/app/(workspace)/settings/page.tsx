@@ -76,7 +76,7 @@ export default async function SettingsPage() {
               label={adapter.platform}
               value={
                 <Badge tone={adapter.configured ? 'success' : 'warning'}>
-                  {adapter.configured ? 'configured' : 'not implemented'}
+                  {adapter.configured ? 'configured' : 'not configured'}
                 </Badge>
               }
             />

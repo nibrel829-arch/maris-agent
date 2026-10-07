@@ -296,6 +296,7 @@ describe('SQL bootstrap artifact (supabase/scripts/provision_owner.sql)', () => 
       '0006_clients_crm.sql',
       '0007_content_storage.sql',
       '0008_social_connections.sql',
+      '0009_publish_jobs.sql',
     ]);
     expect(migrations.some((name) => name.includes('provision'))).toBe(false);
   });
@@ -473,6 +474,7 @@ describe('SQL-Editor bundle: the paste must be pure SQL', () => {
       '0006_clients_crm.sql',
       '0007_content_storage.sql',
       '0008_social_connections.sql',
+      '0009_publish_jobs.sql',
     ]);
 
     const bundle = renderMigrations(migrations);
@@ -511,7 +513,7 @@ describe('SQL-Editor bundle: the paste must be pure SQL', () => {
     expect(bundle.split('\n').filter((line) => line.startsWith('>'))).toEqual([]);
     expect(bundle).not.toMatch(/drop\s+(table|column|type|schema|database)\b/i);
     expect(bundle).not.toMatch(/\b(truncate|delete\s+from)\b/i);
-    for (const name of ['0001_core_identity.sql', '0008_social_connections.sql']) {
+    for (const name of ['0001_core_identity.sql', '0008_social_connections.sql', '0009_publish_jobs.sql']) {
       expect(bundle).toContain(`-- ${name}`);
     }
   });
