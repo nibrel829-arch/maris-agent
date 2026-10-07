@@ -12,7 +12,7 @@ export const maxDuration = 120;
  * GET|POST /api/cron/publish
  * Sweeps due Nibrexo-held publish jobs (scheduled posts whose time arrived,
  * retries whose backoff elapsed, in-flight verifications). Called by the
- * hosting platform's scheduler (see vercel.json). Authorized by the
+ * operator-configured scheduler (see CRON_SECRET in .env.example).
  * server-only NIBREXO_CRON_SECRET bearer token or, where injected, the
  * platform's own cron signature — never by a user session.
  */
