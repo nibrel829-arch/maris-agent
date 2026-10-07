@@ -57,7 +57,15 @@ export interface ActorContext {
 /* CRM (PDF #05 §6)                                                            */
 /* -------------------------------------------------------------------------- */
 
-export type ClientStatus = 'lead' | 'qualified' | 'active' | 'paused' | 'churned';
+export type ClientStatus =
+  | 'lead'
+  | 'prospect'
+  | 'qualified'
+  | 'active'
+  | 'paused'
+  | 'inactive'
+  | 'churned'
+  | 'completed';
 
 export interface Client {
   id: UUID;
@@ -65,6 +73,7 @@ export interface Client {
   name: string;
   company: string | null;
   email: string | null;
+  phone: string | null;
   status: ClientStatus;
   tags: string[];
   notes: string | null;

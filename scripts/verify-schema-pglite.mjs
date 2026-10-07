@@ -2,13 +2,13 @@
 /**
  * Database-level verification of the Nibrexo schema + owner bootstrap.
  *
- * Runs the real migrations (0001-0005) and the real
+ * Runs the real migrations (0001-0006) and the real
  * `supabase/scripts/provision_owner.sql` against an embedded PostgreSQL
  * (@electric-sql/pglite, PostgreSQL compiled to WASM) with a minimal
  * Supabase-compatible `auth` shim. It proves, without touching the live
  * project:
  *
- *   1. all five migrations apply in order to an empty database;
+ *   1. all six migrations apply in order to an empty database;
  *   2. an authenticated user with no membership cannot read the organization
  *      and cannot insert their own membership (the RLS chicken-and-egg that
  *      makes owner bootstrap an operator action);
@@ -153,6 +153,7 @@ for (const name of [
   '0003_manager_agent.sql',
   '0004_rls_policies.sql',
   '0005_rls_hardening.sql',
+  '0006_clients_crm.sql',
 ]) {
   await db.exec(migrationSql(readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')));
   console.log(`  ✓ applied ${name}`);
@@ -284,7 +285,7 @@ console.log('  ✓ with 2 organizations and no slug match it refuses to guess an
 
 // --- 5. SQL-Editor path: one generated script, one paste --------------------
 // `npm run db:sql` output must produce exactly the same schema as applying the
-// five files individually, which is what a SQL-Editor operator pastes.
+// six files individually, which is what a SQL-Editor operator pastes.
 const { loadMigrations, renderMigrations } = await import('./lib/migrations-sql.mjs');
 const singlePaste = renderMigrations(loadMigrations(root, migrationSql));
 

@@ -66,7 +66,7 @@ const NAVIGATION: NavGroup[] = [
   {
     label: 'Operations',
     items: [
-      { href: '/clients', label: 'Relationships', module: 'clients', icon: UserGroupIcon },
+      { href: '/clients', label: 'Clients', module: 'clients', icon: UserGroupIcon },
       { href: '/emails', label: 'Email', module: 'email', icon: DocumentIcon },
       { href: '/social', label: 'Channels', module: 'social', icon: PulseIcon },
       { href: '/inbox', label: 'Inbox', module: 'inbox', icon: InboxIcon },

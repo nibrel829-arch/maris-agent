@@ -7,7 +7,7 @@ const migrationsDir = resolve(root, 'supabase/migrations');
 const migration = (name: string) => readFileSync(resolve(migrationsDir, name), 'utf8');
 
 describe('Supabase migration contract', () => {
-  it('keeps the four baseline migrations in order and adds a corrective hardening migration', () => {
+  it('keeps the baseline migrations in order with hardening and CRM follow-ups', () => {
     const names = readdirSync(migrationsDir).filter((name) => name.endsWith('.sql')).sort();
     expect(names).toEqual([
       '0001_core_identity.sql',
@@ -15,7 +15,19 @@ describe('Supabase migration contract', () => {
       '0003_manager_agent.sql',
       '0004_rls_policies.sql',
       '0005_rls_hardening.sql',
+      '0006_clients_crm.sql',
     ]);
+  });
+
+  it('adds the Phase 5 CRM fields without touching tenant protections', () => {
+    const crm = migration('0006_clients_crm.sql');
+    expect(crm).toContain('add column if not exists phone');
+    expect(crm).toContain("add value if not exists 'prospect'");
+    expect(crm).toContain("add value if not exists 'inactive'");
+    expect(crm).toContain("add value if not exists 'completed'");
+    expect(crm).toContain('client_activity_org_idx');
+    expect(crm).not.toContain('drop policy');
+    expect(crm).not.toContain('create policy');
   });
 
   it('defines auth-backed identity, memberships and organization helpers', () => {

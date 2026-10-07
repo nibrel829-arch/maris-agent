@@ -1,53 +1,49 @@
-import { z } from 'zod';
 import { parseBody, withApiContext } from '@/server/api/handler';
-import { checkPermission } from '@/server/auth/permissions';
-import type { ClientStatus } from '@/types/domain';
+import { createClient, listClients } from '@/server/clients/service';
+import { clientListQuerySchema, createClientSchema } from '@/server/clients/validation';
 
 export const dynamic = 'force-dynamic';
 
-const createSchema = z.object({
-  name: z.string().min(1).max(200),
-  company: z.string().max(200).optional(),
-  email: z.string().email().optional(),
-  status: z.enum(['lead', 'qualified', 'active', 'paused', 'churned']).default('lead'),
-  tags: z.array(z.string().max(50)).max(25).default([]),
-});
-
-export const GET = withApiContext(async ({ actor, repo }) => {
-  const permission = checkPermission(actor, { module: 'clients', action: 'view' });
-  if (!permission.allowed) {
+/**
+ * GET /api/workspace/clients?search=&status=&limit=&offset=
+ * Organization-scoped client directory with search, status filter and
+ * pagination. Tenancy comes from the session actor, never from the query.
+ */
+export const GET = withApiContext(async ({ actor, repo }, request) => {
+  const params = Object.fromEntries(new URL(request.url).searchParams);
+  const parsed = clientListQuerySchema.safeParse(params);
+  if (!parsed.success) {
     return {
       ok: false as const,
-      status: 403,
+      status: 400,
       error: {
-        code: 'PERMISSION_DENIED',
-        message: permission.reason,
-        severity: 'error',
+        code: 'INVALID_INPUT',
+        message: parsed.error.issues.map((issue) => issue.message).join('; '),
+        severity: 'error' as const,
         retryable: false,
-        errorClass: 'permission',
+        errorClass: 'validation' as const,
       },
     };
   }
-  return { ok: true as const, data: await repo.clients.list(actor.organizationId, { limit: 100 }) };
+
+  const result = await listClients(actor, repo, parsed.data);
+  if (!result.ok) {
+    return {
+      ok: false as const,
+      status: result.error.errorClass === 'permission' ? 403 : 500,
+      error: result.error,
+    };
+  }
+  return { ok: true as const, data: result.data };
 });
 
+/**
+ * POST /api/workspace/clients
+ * Creates a client in the actor's organization. `organization_id` is not
+ * accepted from the body — Zod strips it and the service uses the actor.
+ */
 export const POST = withApiContext(async ({ actor, repo }, request) => {
-  const permission = checkPermission(actor, { module: 'clients', action: 'create' });
-  if (!permission.allowed) {
-    return {
-      ok: false as const,
-      status: 403,
-      error: {
-        code: 'PERMISSION_DENIED',
-        message: permission.reason,
-        severity: 'error',
-        retryable: false,
-        errorClass: 'permission',
-      },
-    };
-  }
-
-  const body = await parseBody(request, createSchema);
+  const body = await parseBody(request, createClientSchema);
   if (!body.ok) {
     return {
       ok: false as const,
@@ -55,23 +51,20 @@ export const POST = withApiContext(async ({ actor, repo }, request) => {
       error: {
         code: 'INVALID_INPUT',
         message: body.message,
-        severity: 'error',
+        severity: 'error' as const,
         retryable: false,
-        errorClass: 'validation',
+        errorClass: 'validation' as const,
       },
     };
   }
 
-  const client = await repo.clients.insert({
-    organization_id: actor.organizationId,
-    name: body.data.name,
-    company: body.data.company ?? null,
-    email: body.data.email ?? null,
-    status: body.data.status as ClientStatus,
-    tags: body.data.tags,
-    notes: null,
-    created_by: actor.userId,
-  });
-
-  return { ok: true as const, data: client, status: 201 };
+  const result = await createClient(actor, repo, body.data);
+  if (!result.ok) {
+    return {
+      ok: false as const,
+      status: result.error.errorClass === 'permission' ? 403 : 500,
+      error: result.error,
+    };
+  }
+  return { ok: true as const, data: result.data, status: 201 };
 });
