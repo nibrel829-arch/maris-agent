@@ -48,18 +48,21 @@ export function CreateClientForm() {
     <div className="space-y-3">
       <div className="grid gap-3 sm:grid-cols-3">
         <input
+          aria-label="Client name"
           className="input"
           placeholder="Client name"
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
         <input
+          aria-label="Company"
           className="input"
           placeholder="Company"
           value={company}
           onChange={(event) => setCompany(event.target.value)}
         />
         <input
+          aria-label="Email"
           className="input"
           placeholder="Email"
           value={email}

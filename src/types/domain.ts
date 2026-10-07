@@ -294,6 +294,7 @@ export type RiskLevel = 'low' | 'medium' | 'high';
 
 export type ActivityAction =
   | 'manager.task.created'
+  | 'manager.task.resumed'
   | 'manager.task.completed'
   | 'manager.task.failed'
   | 'manager.step.executed'

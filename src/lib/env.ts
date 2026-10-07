@@ -2,9 +2,9 @@
  * Environment configuration.
  *
  * Secrets are read from the environment only and are never shipped to the
- * browser (PDF #11 §6, PDF #12 §17). Server-only values are accessed through
- * `serverEnv()`, which throws if called from client code paths that would
- * expose them.
+ * browser. `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` is the current Supabase
+ * equivalent of the legacy anonymous key and is intentionally safe to expose
+ * to browser code; service/secret keys remain server-only.
  */
 
 const isProduction = process.env.NODE_ENV === 'production';
@@ -19,17 +19,49 @@ const flag = (value: string | undefined): boolean => {
   return v === '1' || v === 'true' || v === 'yes';
 };
 
+type PublicKeySource =
+  | 'NEXT_PUBLIC_SUPABASE_ANON_KEY'
+  | 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY'
+  | null;
+
+type ServiceKeySource = 'SUPABASE_SERVICE_ROLE_KEY' | 'SUPABASE_SECRET_KEY' | null;
+
+function publicSupabaseKey(): { value: string | null; source: PublicKeySource } {
+  const legacyAnon = optional(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  if (legacyAnon) return { value: legacyAnon, source: 'NEXT_PUBLIC_SUPABASE_ANON_KEY' };
+
+  const publishable = optional(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+  if (publishable) return { value: publishable, source: 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY' };
+
+  return { value: null, source: null };
+}
+
+function serverSupabaseKey(): { value: string | null; source: ServiceKeySource } {
+  const serviceRole = optional(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (serviceRole) return { value: serviceRole, source: 'SUPABASE_SERVICE_ROLE_KEY' };
+
+  const secretKey = optional(process.env.SUPABASE_SECRET_KEY);
+  if (secretKey) return { value: secretKey, source: 'SUPABASE_SECRET_KEY' };
+
+  return { value: null, source: null };
+}
+
 export type DataBackend = 'supabase' | 'memory';
 
 export interface PublicEnv {
   supabaseUrl: string | null;
+  /** Legacy internal name retained so repository interfaces do not change. */
   supabaseAnonKey: string | null;
+  /** Safe diagnostic metadata only; never contains key material. */
+  supabasePublicKeySource: PublicKeySource;
   supabaseConfigured: boolean;
   isProduction: boolean;
 }
 
 export interface ServerEnv extends PublicEnv {
   supabaseServiceRoleKey: string | null;
+  /** Safe diagnostic metadata only; never contains key material. */
+  supabaseServiceKeySource: ServiceKeySource;
   aiProvider: string;
   aiModel: string;
   openAiApiKey: string | null;
@@ -42,11 +74,12 @@ export interface ServerEnv extends PublicEnv {
 
 export function publicEnv(): PublicEnv {
   const url = optional(process.env.NEXT_PUBLIC_SUPABASE_URL);
-  const anon = optional(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  const key = publicSupabaseKey();
   return {
     supabaseUrl: url ?? null,
-    supabaseAnonKey: anon ?? null,
-    supabaseConfigured: Boolean(url && anon),
+    supabaseAnonKey: key.value,
+    supabasePublicKeySource: key.source,
+    supabaseConfigured: Boolean(url && key.value),
     isProduction,
   };
 }
@@ -54,6 +87,7 @@ export function publicEnv(): PublicEnv {
 export function serverEnv(): ServerEnv {
   const pub = publicEnv();
   const openAiApiKey = optional(process.env.OPENAI_API_KEY) ?? null;
+  const serviceKey = serverSupabaseKey();
 
   // The in-memory backend exists for local development and tests only.
   // It must never be selected in production — that would silently discard data.
@@ -63,7 +97,8 @@ export function serverEnv(): ServerEnv {
 
   return {
     ...pub,
-    supabaseServiceRoleKey: optional(process.env.SUPABASE_SERVICE_ROLE_KEY) ?? null,
+    supabaseServiceRoleKey: serviceKey.value,
+    supabaseServiceKeySource: serviceKey.source,
     aiProvider: optional(process.env.NIBREXO_AI_PROVIDER) ?? 'openai',
     aiModel: optional(process.env.NIBREXO_AI_MODEL) ?? 'gpt-4o-mini',
     openAiApiKey,

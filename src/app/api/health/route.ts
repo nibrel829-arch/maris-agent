@@ -20,6 +20,10 @@ export async function GET(): Promise<NextResponse> {
     environment: env.isProduction ? 'production' : 'development',
     configuration: {
       supabase: pub.supabaseConfigured,
+      // Names only — no URL or key material is ever returned.
+      supabasePublicKeySource: pub.supabasePublicKeySource,
+      supabaseServiceKeyConfigured: Boolean(env.supabaseServiceRoleKey),
+      supabaseServiceKeySource: env.supabaseServiceKeySource,
       dataBackend: env.dataBackend,
       ai: env.aiEnabled,
       aiModel: env.aiEnabled ? env.aiModel : null,
