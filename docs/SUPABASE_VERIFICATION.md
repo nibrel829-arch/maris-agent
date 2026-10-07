@@ -169,7 +169,7 @@ supabase migration list              # expect all five applied
 **Path B — SQL Editor, no CLI (single paste):**
 
 ```bash
-npm run db:sql > all_migrations.sql     # 0001 -> 0005, concatenated in order
+npm run db:sql     # writes ./all_migrations.sql: 0001 -> 0005, concatenated in order
 ```
 
 Paste that file into the SQL Editor and run it once. It is a generated concatenation of

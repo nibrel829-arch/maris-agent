@@ -44,7 +44,7 @@ written to a disposable store.
    The current migration set is `0001` through `0005`; `0005` hardens RLS policies after the original four migrations.
    Without the CLI, generate one ordered script and paste it into the SQL Editor once:
    ```bash
-   npm run db:sql > all_migrations.sql
+   npm run db:sql          # writes ./all_migrations.sql (pure SQL, no banner)
    ```
 4. Verify the schema actually landed before doing anything else: run
    `supabase/scripts/diagnose_schema.sql` in the Supabase SQL Editor (read-only). Every row of
@@ -97,7 +97,8 @@ it never emulates a model response.
 | `npm run lint` | ESLint |
 | `npm run auth:status` | Read-only owner/organization/membership diagnosis (`-- --email=…`) |
 | `npm run auth:provision` | Attach the first owner (`-- --email=… --apply`); `--print-sql` needs no credentials |
-| `npm run db:sql` | Print the ordered migration set (0001–0005) for a single SQL-Editor paste |
+| `npm run db:sql` | Write `all_migrations.sql` (0001–0005 in order) for a single SQL-Editor paste |
+| `npm run db:sql:stdout` | Print the same bundle to stdout instead of a file |
 | `npm run verify:schema` | Runs migrations + owner bootstrap against embedded PostgreSQL (needs `npm i --no-save @electric-sql/pglite@0.2.17`) |
 
 ---

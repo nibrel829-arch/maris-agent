@@ -19,7 +19,8 @@
     "auth:provision": "tsx scripts/provision-owner.ts --apply",
     "verify": "npm run typecheck && npm run lint && npm test",
     "verify:schema": "node scripts/verify-schema-pglite.mjs",
-    "db:sql": "node scripts/emit-migrations.mjs"
+    "db:sql": "node scripts/emit-migrations.mjs",
+    "db:sql:stdout": "node scripts/emit-migrations.mjs --stdout"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.3.22",

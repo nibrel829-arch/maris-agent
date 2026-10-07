@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { MembershipRecordForUser, OrganizationRecord } from '@/server/auth/provisioning';
@@ -450,5 +450,63 @@ describe('Schema drift: diagnose_schema.sql and the bootstrap preflight', () => 
     expect(diagnose).toContain('supabase_migrations.schema_migrations');
     expect(diagnose).toContain('raise notice');
     expect(diagnose).toContain('Do NOT create public.org_role');
+  });
+});
+
+describe('SQL-Editor bundle: the paste must be pure SQL', () => {
+  const root = resolve(process.cwd());
+  const emitter = readFileSync(resolve(root, 'scripts/emit-migrations.mjs'), 'utf8');
+
+  it('generates the bundle from the migration files, never from a copy', async () => {
+    const { loadMigrations, renderMigrations } = await import('../../scripts/lib/migrations-sql.mjs');
+    const migrations = loadMigrations(root);
+
+    expect(migrations.map((migration) => migration.name)).toEqual([
+      '0001_core_identity.sql',
+      '0002_modules.sql',
+      '0003_manager_agent.sql',
+      '0004_rls_policies.sql',
+      '0005_rls_hardening.sql',
+    ]);
+
+    const bundle = renderMigrations(migrations);
+    // Every migration appears verbatim, in order — no rewriting, no simplification.
+    let cursor = 0;
+    for (const migration of migrations) {
+      const at = bundle.indexOf(migration.sql.trim(), cursor);
+      expect(at, `${migration.name} must appear verbatim and in order`).toBeGreaterThan(-1);
+      cursor = at + migration.sql.trim().length;
+    }
+    // Provisioning is a separate file: the schema bundle must contain no
+    // bootstrap logic and must never insert rows (the only mention of
+    // provision_owner.sql is the header comment telling the operator to run it
+    // afterwards).
+    expect(bundle).not.toContain('v_owner_email');
+    expect(bundle).not.toMatch(/insert\s+into\s+public\.(organizations|profiles|memberships)/i);
+    expect(bundle.match(/provision_owner/g)?.length ?? 0).toBeLessThanOrEqual(1);
+  });
+
+  it('refuses to emit a bundle contaminated by the npm script banner', () => {
+    // Regression guard: `npm run db:sql > file.sql` used to prepend
+    // "> nibrexo-os-ai@0.1.0 db:sql" to the file, which the SQL Editor rejects.
+    expect(emitter).toContain("assertPureSql");
+    expect(emitter).toContain("line.startsWith('>')");
+    expect(emitter).toContain("first.startsWith('--')");
+    // Default is a file written by node, so npm's stdout banner cannot leak in.
+    expect(emitter).toContain("process.argv.slice(2)");
+    expect(emitter).toContain("const DEFAULT_OUT = resolve(root, 'all_migrations.sql')");
+  });
+
+  it('keeps the generated all_migrations.sql (when present) free of non-SQL lines', () => {
+    const bundlePath = resolve(root, 'all_migrations.sql');
+    if (!existsSync(bundlePath)) return; // generated on demand; git-ignored
+    const bundle = readFileSync(bundlePath, 'utf8');
+    expect(bundle.startsWith('--')).toBe(true);
+    expect(bundle.split('\n').filter((line) => line.startsWith('>'))).toEqual([]);
+    expect(bundle).not.toMatch(/drop\s+(table|column|type|schema|database)\b/i);
+    expect(bundle).not.toMatch(/\b(truncate|delete\s+from)\b/i);
+    for (const name of ['0001_core_identity.sql', '0005_rls_hardening.sql']) {
+      expect(bundle).toContain(`-- ${name}`);
+    }
   });
 });
