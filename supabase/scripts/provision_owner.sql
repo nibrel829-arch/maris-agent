@@ -29,6 +29,41 @@
 -- CONFIGURE: edit the values below, then run the whole file.
 -- (`npm run auth:provision -- --email=<owner email> --print-sql` writes this
 --  file out with the values already filled in.)
+--
+-- PREREQUISITE
+--   Migrations 0001-0005 must already be applied to this project. The preflight
+--   block below verifies that and stops with an actionable message instead of a
+--   bare `42704: type "public.org_role" does not exist`. If it stops: apply the
+--   migrations (never create the type by hand) — see
+--   `supabase/scripts/diagnose_schema.sql` and `docs/SUPABASE_VERIFICATION.md`.
+
+-- ---------------------------------------------------------------------------
+-- PREFLIGHT (read-only): confirm the repository schema exists before touching
+-- anything. It reads catalogs only — no type or table is created, altered or
+-- dropped here, and the enum stays authoritative for `v_role` below.
+-- ---------------------------------------------------------------------------
+do $$
+declare
+  v_missing text[] := array[]::text[];
+begin
+  if to_regtype('public.org_role') is null then
+    v_missing := array_append(v_missing, 'type public.org_role  (supabase/migrations/0001_core_identity.sql)');
+  end if;
+  if to_regclass('public.organizations') is null then
+    v_missing := array_append(v_missing, 'table public.organizations  (supabase/migrations/0001_core_identity.sql)');
+  end if;
+  if to_regclass('public.profiles') is null then
+    v_missing := array_append(v_missing, 'table public.profiles  (supabase/migrations/0001_core_identity.sql)');
+  end if;
+  if to_regclass('public.memberships') is null then
+    v_missing := array_append(v_missing, 'table public.memberships  (supabase/migrations/0001_core_identity.sql)');
+  end if;
+
+  if coalesce(array_length(v_missing, 1), 0) > 0 then
+    raise exception E'Nibrexo schema is not fully applied to this project, so the owner bootstrap cannot run yet.\nMissing:\n  - %\nFix: apply supabase/migrations 0001 -> 0005 in order (supabase db push, or paste each file into the SQL Editor in order), then re-run this file unchanged.\nDo not create these objects by hand. Nothing was created or modified by this run.',
+      array_to_string(v_missing, E'\n  - ');
+  end if;
+end $$;
 
 do $$
 declare

@@ -69,6 +69,11 @@ drop policy if exists ai_tasks_tenant_insert on public.ai_tasks;
 drop policy if exists ai_tasks_tenant_update on public.ai_tasks;
 drop policy if exists ai_tasks_admin_delete on public.ai_tasks;
 drop policy if exists ai_tasks_owner_update on public.ai_tasks;
+-- Also drop the policies this migration itself creates, so the file is safe to
+-- re-run (a SQL-Editor project where 0005 is applied twice, or after a partial
+-- failure, must not fail with 42710 on an already-existing policy).
+drop policy if exists ai_tasks_requester_insert on public.ai_tasks;
+drop policy if exists ai_tasks_requester_update on public.ai_tasks;
 create policy ai_tasks_requester_insert on public.ai_tasks
   for insert
   with check (user_id = auth.uid() and public.is_org_member(organization_id));
@@ -81,8 +86,12 @@ create policy ai_tasks_requester_update on public.ai_tasks
 drop policy if exists social_credentials_tenant_select on public.social_credentials;
 drop policy if exists social_credentials_tenant_insert on public.social_credentials;
 drop policy if exists social_credentials_tenant_update on public.social_credentials;
+-- Every policy this file creates is dropped first, so re-applying it (a second
+-- SQL-Editor run, or a retry after a partial failure) cannot fail with 42710.
 drop policy if exists social_credentials_admin_delete on public.social_credentials;
 drop policy if exists social_credentials_admin_select on public.social_credentials;
+drop policy if exists social_credentials_admin_insert on public.social_credentials;
+drop policy if exists social_credentials_admin_update on public.social_credentials;
 create policy social_credentials_admin_select on public.social_credentials
   for select using (public.is_org_admin(organization_id));
 create policy social_credentials_admin_insert on public.social_credentials
@@ -96,6 +105,8 @@ create policy social_credentials_admin_delete on public.social_credentials
 -- Runtime settings carry configuration and therefore belong to owners/admins.
 drop policy if exists settings_tenant_insert on public.settings;
 drop policy if exists settings_tenant_update on public.settings;
+drop policy if exists settings_admin_insert on public.settings;
+drop policy if exists settings_admin_update on public.settings;
 drop policy if exists settings_admin_delete on public.settings;
 create policy settings_admin_insert on public.settings
   for insert with check (public.is_org_admin(organization_id));

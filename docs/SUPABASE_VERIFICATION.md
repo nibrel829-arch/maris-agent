@@ -106,6 +106,107 @@ The endpoint returns names/statuses only, never URLs or key material. It must ne
 > does not auto-assign a new signup to an arbitrary organization. Use the provisioning
 > section below to attach the first owner.
 
+## Incident 2026-10-07 — `42704: type "public.org_role" does not exist`
+
+### Symptom
+
+`supabase/scripts/provision_owner.sql` stopped on `v_role public.org_role := 'owner';` with:
+
+```
+ERROR: 42704: type "public.org_role" does not exist
+```
+
+### Diagnosis
+
+`public.org_role` is created in exactly one place: the guarded `do $$` block in
+`supabase/migrations/0001_core_identity.sql` (line 29), and `public.memberships.role` is
+typed as `public.org_role`. The bootstrap declares `v_role public.org_role` **because that is
+the repository's schema** — a `42704` there means the live project has no such type, so
+migration `0001` (and therefore `0002`–`0005`, which all reference `organizations`) has not
+been applied to the project the app and the SQL Editor are pointed at. The repository has never
+been able to prove otherwise: `docs/SUPABASE_VERIFICATION.md` (2026-10-06) records that no
+project ref, public key or service key was ever available to it, so `supabase migration list` /
+`supabase db push` were never run.
+
+The same missing schema explains the application symptom: the deployed build's
+`memberships` lookup fails (`relation "public.memberships" does not exist`) and the
+pre-fix `resolveActor()` collapsed *any* read error into
+`NO_ORGANIZATION` — "not a member of any organization". PR #4 separates those two states
+(`MEMBERSHIP_LOOKUP_FAILED` vs `NO_ORGANIZATION`), so a missing schema can no longer be
+mistaken for a missing invitation.
+
+### Confirm it (read-only, no secrets)
+
+Run `supabase/scripts/diagnose_schema.sql` in the SQL Editor. It only reads catalogs and never
+touches the Nibrexo tables, so it works even when everything is missing. Expected output on an
+unmigrated project: `status = MISSING` for `public.org_role`, `public.organizations`,
+`public.profiles`, `public.memberships` (and the rest of the list), `public_tables = 0`,
+`public_enums = 0`, no rows in "TABLES + RLS", plus a notice that
+`supabase_migrations.schema_migrations` does not exist (the CLI has never pushed anything).
+
+A partially applied project shows a mix; the rule is simply that **every row of Grid 1 must be
+`ok` before provisioning**. `public_enums` is a good single indicator: a fully applied
+`0001`–`0005` set creates 14 enums (`0001`: 2, `0002`: 7, `0003`: 5).
+
+### Remediation — apply the repository migrations, then re-run the bootstrap unchanged
+
+Nothing is deleted, no project is recreated, no object is created by hand. All five migrations
+are safely re-runnable: every `create table` / `create index` is `if not exists`, every
+`create type` is guarded by a `pg_type` check, and the only `drop` statements are
+`drop policy if exists` (policy metadata, never rows). `0004`/`0005` only add RLS policies and
+immutability triggers, so applying them strengthens security and cannot weaken RLS.
+
+**Path A — Supabase CLI (the documented deployment workflow):**
+
+```bash
+supabase login                      # browser flow; no secret is pasted anywhere
+supabase link --project-ref <your-project-ref>
+supabase migration list              # local vs remote: shows 0001-0005 as not applied
+supabase db push                     # applies 0001 -> 0005 in order, records them
+supabase migration list              # expect all five applied
+```
+
+**Path B — SQL Editor, no CLI (single paste):**
+
+```bash
+npm run db:sql > all_migrations.sql     # 0001 -> 0005, concatenated in order
+```
+
+Paste that file into the SQL Editor and run it once. It is a generated concatenation of
+`supabase/migrations/*.sql` — the migration files remain the single source of truth, so it
+cannot drift from `supabase db push`; never edit the generated file. Alternatively paste the
+five files one at a time, in this order: `0001_core_identity.sql`, `0002_modules.sql`,
+`0003_manager_agent.sql`, `0004_rls_policies.sql`, `0005_rls_hardening.sql`.
+
+Either way, run `supabase/scripts/diagnose_schema.sql` again and confirm Grid 1 is entirely
+`ok`.
+
+**Re-applying is safe.** Verified in `npm run verify:schema`: the set was applied **three times
+in a row** to the same database with identical objects afterwards (34 tables, 14 enums, 126
+policies, 31 triggers). Two gaps that made a second application fail with
+`42710: policy … already exists` were corrected in `0005_rls_hardening.sql` — it now drops
+`ai_tasks_requester_insert`, `ai_tasks_requester_update`, `social_credentials_admin_insert`,
+`social_credentials_admin_update`, and the three `settings_admin_*` policies before creating
+them. `drop policy if exists` on a policy that does not exist is a no-op, so for any project
+that already has `0005` applied this change is inert. `tests/unit/supabase-contract.test.ts`
+now enforces that every policy either migration creates is dropped first, and that no
+migration ever drops a table/column/type or deletes rows.
+
+**Then, unchanged:** `supabase/scripts/provision_owner.sql` with the login email filled in on
+its config and verification lines. The bootstrap now begins with a read-only preflight that
+stops with the missing-object list and this exact guidance instead of a bare `42704`; it never
+creates the enum or any table. Verified in `npm run verify:schema`: on an unmigrated database
+the preflight fires, creates zero objects, and after the migrations the bootstrap creates
+exactly one organization, one profile and one owner membership, twice in a row with no
+duplicates.
+
+### What to check if `public.org_role` is missing but the tables already exist
+
+That combination cannot come from the migrations (`memberships.role` is typed as the enum), so
+it means objects were created outside them. Grid 4 of the diagnostic lists same-named types in
+other schemas — the `0001` guard matches `typname` without a schema filter. In that case stop
+and reconcile before provisioning rather than dropping anything: the tables hold data.
+
 ## Owner membership authorization (`NO_ORGANIZATION`)
 
 ### Finding (2026-10-07)

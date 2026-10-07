@@ -52,6 +52,36 @@ describe('Supabase migration contract', () => {
     expect(hardening).toContain('create policy social_credentials_admin_select');
   });
 
+  it('drops every policy it creates, so the migration set is safe to re-apply', () => {
+    // Regression guard for `42710: policy "…" already exists`: a SQL-Editor
+    // project may apply a file twice (retry after a partial failure), and
+    // `supabase db push` on a database that was set up by hand must also be
+    // safe. Policies created inside the dynamic tenant loop use format('%I', …)
+    // and are excluded by this pattern.
+    for (const name of ['0004_rls_policies.sql', '0005_rls_hardening.sql']) {
+      const sql = migration(name);
+      const created = [...sql.matchAll(/create policy\s+([a-z0-9_]+)/g)].map((match) => match[1]);
+      expect(created.length).toBeGreaterThan(0);
+      for (const policy of new Set(created)) {
+        expect(sql, `${name} creates ${policy} without dropping it first`).toContain(
+          `drop policy if exists ${policy} `,
+        );
+      }
+    }
+  });
+
+  it('never deletes data in any migration', () => {
+    for (const name of readdirSync(migrationsDir).filter((file) => file.endsWith('.sql'))) {
+      const sql = migration(name);
+      expect(sql, `${name} must not drop tables or columns`).not.toMatch(
+        /drop\s+(table|column|type|schema|database)\b/i,
+      );
+      expect(sql, `${name} must not truncate or delete rows`).not.toMatch(
+        /\b(truncate|delete\s+from)\b/i,
+      );
+    }
+  });
+
   it('keeps the audit log append-only and tenant identity immutable', () => {
     const hardening = migration('0005_rls_hardening.sql');
     expect(hardening).toContain('function public.prevent_tenant_identity_change');

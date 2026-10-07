@@ -351,3 +351,104 @@ describe('SQL bootstrap artifact (supabase/scripts/provision_owner.sql)', () => 
     expect(findUnresolvedPlaceholders(rendered)).toEqual([]);
   });
 });
+
+/**
+ * Strips `--` line comments so structural assertions cannot be satisfied — or
+ * broken — by prose in the file header.
+ */
+function withoutComments(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.replace(/--.*$/, ''))
+    .join('\n');
+}
+
+describe('Schema drift: diagnose_schema.sql and the bootstrap preflight', () => {
+  const root = resolve(process.cwd());
+  const bootstrapRaw = readFileSync(resolve(root, 'supabase/scripts/provision_owner.sql'), 'utf8');
+  const diagnoseRaw = readFileSync(resolve(root, 'supabase/scripts/diagnose_schema.sql'), 'utf8');
+  const bootstrap = withoutComments(bootstrapRaw);
+  const diagnose = withoutComments(diagnoseRaw);
+
+  it('keeps public.org_role authoritative: declared by the bootstrap, never created by it', () => {
+    // Regression guard for `ERROR 42704: type "public.org_role" does not exist`:
+    // the fix is to apply migration 0001, never to bypass or recreate the enum.
+    expect(bootstrap).toContain('public.org_role');
+    expect(bootstrap).toContain("public.org_role := 'owner'");
+    expect(bootstrap).not.toMatch(/create\s+type/i);
+    expect(bootstrap).not.toMatch(/create\s+table/i);
+    expect(bootstrap).not.toMatch(/create\s+extension/i);
+    expect(bootstrap).not.toMatch(/\balter\s+table\b/i);
+    expect(bootstrap).not.toMatch(/\bdrop\s+/i);
+    expect(bootstrap).not.toMatch(/\bdelete\s+from\b/i);
+    expect(bootstrap).not.toMatch(/\btruncate\b/i);
+  });
+
+  it('stops with an actionable preflight message when the migrations are not applied', () => {
+    expect(bootstrap).toContain("to_regtype('public.org_role')");
+    expect(bootstrap).toContain("to_regclass('public.organizations')");
+    expect(bootstrap).toContain("to_regclass('public.profiles')");
+    expect(bootstrap).toContain("to_regclass('public.memberships')");
+    expect(bootstrap).toContain('is not fully applied to this project');
+    expect(bootstrap).toContain('supabase/migrations/0001_core_identity.sql');
+    expect(bootstrap).toContain('Nothing was created or modified by this run.');
+
+    // The preflight must execute before anything can be written.
+    const preflight = bootstrapRaw.indexOf('PREFLIGHT');
+    expect(preflight).toBeGreaterThan(-1);
+    expect(preflight).toBeLessThan(bootstrapRaw.indexOf("v_owner_email text :="));
+    expect(bootstrapRaw.indexOf("to_regtype('public.org_role')")).toBeLessThan(
+      bootstrapRaw.indexOf("v_owner_email text :="),
+    );
+  });
+
+  it('renders the preflight into the SQL-editor output too', () => {
+    const rendered = renderProvisionSql(bootstrapRaw, {
+      email: 'owner@nibrexo.com',
+      userId: null,
+      orgName: 'Nibrexo',
+      orgSlug: 'nibrexo',
+      role: 'owner',
+      fullName: null,
+    });
+    expect(rendered).toContain('is not fully applied to this project');
+    expect(rendered).toContain("v_role        public.org_role := 'owner';");
+    expect(findUnresolvedPlaceholders(rendered)).toEqual([]);
+  });
+
+  it('ships a read-only diagnostic that creates, alters and deletes nothing', () => {
+    expect(diagnose).not.toMatch(/\b(insert|update|delete|drop|alter|truncate)\b/i);
+    expect(diagnose).not.toMatch(
+      /create\s+(table|type|extension|index|policy|trigger|function|temp|temporary|or\s+replace)/i,
+    );
+    // It must not read the tenant tables either: it has to work when they are missing.
+    expect(diagnose).not.toMatch(/\bfrom\s+public\.(organizations|profiles|memberships)\b/i);
+  });
+
+  it('checks every object the bootstrap and the actor resolution depend on', () => {
+    for (const object of [
+      'public.org_role',
+      'public.organizations',
+      'public.profiles',
+      'public.memberships',
+      'public.is_org_member(uuid)',
+      'public.org_role_of(uuid)',
+      'public.is_org_admin(uuid)',
+      'public.clients',
+      'public.ai_tasks',
+      'public.approvals',
+    ]) {
+      expect(diagnose).toContain(object);
+    }
+    // RLS state and the same-named-type edge case from the 0001 guards.
+    expect(diagnose).toContain('relrowsecurity');
+    expect(diagnose).toContain('pg_policies');
+    expect(diagnose).toContain('typname');
+  });
+
+  it('reads the Supabase CLI migration bookkeeping defensively', () => {
+    expect(diagnose).toContain('supabase_migrations.schema_migrations');
+    expect(diagnose).toContain('raise notice');
+    expect(diagnose).toContain('Do NOT create public.org_role');
+  });
+});

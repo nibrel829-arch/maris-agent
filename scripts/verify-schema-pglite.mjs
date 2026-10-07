@@ -85,6 +85,67 @@ await db.exec(`
   end $$;
 `);
 
+await db.exec(`insert into auth.users (id, email) values ('${OWNER_ID}', '${OWNER_EMAIL}');`);
+console.log('  ✓ seeded the Supabase Auth user (no profile, no membership yet)');
+
+// --- 0. schema NOT applied yet: the live `42704` situation ------------------
+// `--print-sql` output is rendered once and reused, exactly like the operator
+// pasting one file into the SQL Editor. Against a project without the
+// migrations, the bootstrap must stop with an actionable message and create
+// nothing (this reproduces the production failure being diagnosed).
+const { execFileSync } = await import('node:child_process');
+const rendered = execFileSync(
+  process.execPath,
+  [
+    resolve(root, 'node_modules/tsx/dist/cli.mjs'),
+    resolve(root, 'scripts/provision-owner.ts'),
+    `--email=${OWNER_EMAIL}`,
+    '--print-sql',
+  ],
+  { encoding: 'utf8', env: { ...process.env, NODE_NO_WARNINGS: '1' } },
+);
+
+let preflightMessage = null;
+try {
+  await db.exec(rendered);
+} catch (error) {
+  preflightMessage = String(error);
+}
+if (!preflightMessage) {
+  fail('Without migrations the bootstrap must fail loudly, not silently succeed.');
+}
+if (!/not fully applied to this project/.test(preflightMessage)) {
+  fail('Without migrations the bootstrap must stop with the schema preflight message (not a bare 42704).');
+}
+if (!/public\.org_role/.test(preflightMessage)) {
+  fail('The preflight message must name the missing object (public.org_role).');
+}
+const nothingCreated = await db.query(
+  `select count(*)::int as n from pg_class c join pg_namespace n on n.oid = c.relnamespace
+    where n.nspname = 'public' and c.relkind = 'r'`,
+);
+if (nothingCreated.rows[0].n !== 0) {
+  fail('The preflight must not create anything when the schema is missing.');
+}
+console.log('  ✓ without migrations: clear preflight message, zero objects created (no bare 42704)');
+
+// The read-only diagnostic must work in exactly this broken state.
+const diagnoseSql = readFileSync(resolve(root, 'supabase/scripts/diagnose_schema.sql'), 'utf8');
+const brokenDiagnosis = await db.exec(diagnoseSql);
+const brokenObjects = brokenDiagnosis[0]?.rows ?? [];
+const missingNames = brokenObjects
+  .filter((entry) => entry.status === 'MISSING')
+  .map((entry) => entry.object_name);
+if (!missingNames.includes('public.org_role')) {
+  fail('diagnose_schema.sql must report public.org_role as MISSING on an unmigrated project.');
+}
+if (!missingNames.includes('public.memberships') || missingNames.length < 10) {
+  fail('diagnose_schema.sql must report the whole missing identity and module schema.');
+}
+console.log(
+  `  ✓ diagnose_schema.sql on the unmigrated project: ${missingNames.length} objects reported MISSING (incl. public.org_role)`,
+);
+
 // --- migrations, in order ---------------------------------------------------
 for (const name of [
   '0001_core_identity.sql',
@@ -103,8 +164,14 @@ await db.exec(`
   grant select, insert, update, delete on all tables in schema public to authenticated, service_role;
 `);
 
-await db.exec(`insert into auth.users (id, email) values ('${OWNER_ID}', '${OWNER_EMAIL}');`);
-console.log('  ✓ seeded the Supabase Auth user (no profile, no membership yet)');
+// The same diagnostic on the migrated project must report everything ok.
+const goodDiagnosis = await db.exec(diagnoseSql);
+const goodObjects = goodDiagnosis[0]?.rows ?? [];
+const stillMissing = goodObjects.filter((entry) => entry.status === 'MISSING');
+if (stillMissing.length > 0) {
+  fail(`diagnose_schema.sql still reports missing objects after migrations: ${stillMissing.map((e) => e.object_name).join(', ')}`);
+}
+console.log(`  ✓ diagnose_schema.sql after migrations: all ${goodObjects.length} required objects present`);
 
 // --- 1. before provisioning: RLS blocks and hides ---------------------------
 await db.exec(`select set_config('request.jwt.claim.sub', '${OWNER_ID}', false);`);
@@ -133,19 +200,7 @@ console.log('  ✓ authenticated non-member cannot self-provision (memberships_a
 
 await db.exec('reset role;');
 
-// --- 2. provisioning SQL, rendered exactly like `--print-sql` ---------------
-const { execFileSync } = await import('node:child_process');
-const rendered = execFileSync(
-  process.execPath,
-  [
-    resolve(root, 'node_modules/tsx/dist/cli.mjs'),
-    resolve(root, 'scripts/provision-owner.ts'),
-    `--email=${OWNER_EMAIL}`,
-    '--print-sql',
-  ],
-  { encoding: 'utf8', env: { ...process.env, NODE_NO_WARNINGS: '1' } },
-);
-
+// --- 2. provisioning SQL (rendered above), now that the schema exists -------
 await db.exec(rendered);
 await db.exec(rendered); // second run must be a no-op
 
@@ -226,6 +281,72 @@ if (after.rows[0].n !== 2) {
   fail('The ambiguity guard must not create another organization.');
 }
 console.log('  ✓ with 2 organizations and no slug match it refuses to guess and creates nothing');
+
+// --- 5. SQL-Editor path: one generated script, one paste --------------------
+// `npm run db:sql` output must produce exactly the same schema as applying the
+// five files individually, which is what a SQL-Editor operator pastes.
+const { loadMigrations, renderMigrations } = await import('./lib/migrations-sql.mjs');
+const singlePaste = renderMigrations(loadMigrations(root, migrationSql));
+
+const fresh = new PGlite();
+await fresh.exec(`
+  create schema if not exists auth;
+  create table if not exists auth.users (id uuid primary key, email text);
+  create or replace function auth.uid() returns uuid language sql stable as $$
+    select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid;
+  $$;
+  do $$ begin
+    if not exists (select 1 from pg_roles where rolname = 'authenticated') then create role authenticated nologin; end if;
+    if not exists (select 1 from pg_roles where rolname = 'service_role') then create role service_role nologin bypassrls; end if;
+  end $$;
+`);
+await fresh.exec(singlePaste);
+const pasteDiagnosis = await fresh.exec(diagnoseSql);
+const pasteMissing = (pasteDiagnosis[0]?.rows ?? []).filter((entry) => entry.status === 'MISSING');
+if (pasteMissing.length > 0) {
+  fail(
+    `npm run db:sql output does not build the full schema: ${pasteMissing
+      .map((entry) => entry.object_name)
+      .join(', ')}`,
+  );
+}
+const pasteEnums = await fresh.query(
+  `select count(*)::int as n from pg_type t join pg_namespace n on n.oid = t.typnamespace
+    where n.nspname = 'public' and t.typtype = 'e'`,
+);
+if (pasteEnums.rows[0].n !== 14) {
+  fail(`npm run db:sql output created ${pasteEnums.rows[0].n} enums, expected 14.`);
+}
+// Idempotent: a retry after a partial failure (or a second paste) must produce
+// no error and no duplicate object.
+const countObjects = async (target) => {
+  const { rows } = await target.query(`
+    select
+      (select count(*)::int from pg_class c join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and c.relkind = 'r') as tables,
+      (select count(*)::int from pg_type t join pg_namespace n on n.oid = t.typnamespace
+        where n.nspname = 'public' and t.typtype = 'e') as enums,
+      (select count(*)::int from pg_policies where schemaname = 'public') as policies,
+      (select count(*)::int from pg_trigger tg
+        join pg_class c on c.oid = tg.tgrelid
+        join pg_namespace n on n.oid = c.relnamespace
+        where n.nspname = 'public' and not tg.tgisinternal) as triggers
+  `);
+  return rows[0];
+};
+
+const firstCounts = await countObjects(fresh);
+await fresh.exec(singlePaste);
+await fresh.exec(singlePaste);
+const repeatCounts = await countObjects(fresh);
+if (JSON.stringify(firstCounts) !== JSON.stringify(repeatCounts)) {
+  fail(
+    `Re-applying the migration set changed the schema: ${JSON.stringify(firstCounts)} -> ${JSON.stringify(repeatCounts)}`,
+  );
+}
+console.log(
+  `  ✓ npm run db:sql single-paste output: full schema (${firstCounts.tables} tables, ${firstCounts.enums} enums, ${firstCounts.policies} policies), re-runnable 3x with identical objects`,
+);
 
 if (process.exitCode === 1) {
   process.exit(1);
