@@ -19,7 +19,11 @@ import type {
   MediaFile,
   ClientActivity,
   ContentItem,
+  EmailJob,
   EmailLog,
+  EmailPreference,
+  EmailSequence,
+  EmailSequenceEnrollment,
   EmailTemplate,
   Lead,
   ProductConcept,
@@ -119,15 +123,6 @@ export interface QualityReport extends BaseRow {
   created_by: UUID | null;
 }
 
-export interface EmailSequence extends BaseRow {
-  name: string;
-  trigger: string;
-  steps: Array<{ id: string; delayDays: number; templateId: UUID | null; subject: string }>;
-  stop_conditions: string[];
-  status: 'draft' | 'active' | 'paused' | 'completed';
-  created_by: UUID | null;
-}
-
 export interface MemoryRecord extends BaseRow {
   scope: string;
   key: string;
@@ -136,6 +131,11 @@ export interface MemoryRecord extends BaseRow {
 }
 
 export interface NotificationRow extends Notification, BaseRow {}
+
+export interface EmailJobCollection extends Collection<EmailJob> {
+  findByIdempotencyKey(organizationId: UUID, key: string): Promise<EmailJob | null>;
+  claimDueJobs(nowIso: string, lockSeconds: number, limit: number): Promise<EmailJob[]>;
+}
 
 export interface NibrexoRepository {
   readonly backend: 'supabase' | 'memory';
@@ -148,6 +148,10 @@ export interface NibrexoRepository {
   emailTemplates: Collection<EmailTemplate>;
   emailLogs: Collection<EmailLog>;
   emailSequences: Collection<EmailSequence>;
+  emailEnrollments: Collection<EmailSequenceEnrollment>;
+  emailJobs: EmailJobCollection;
+  emailPreferences: Collection<EmailPreference>;
+  emailSteps: Collection<BaseRow & { organization_id: UUID; sequence_id: UUID; position: number; delay_days: number; template_id: UUID | null }>;
   socialAccounts: Collection<SocialAccount>;
   socialCredentials: Collection<SocialCredential>;
   socialOauthStates: Collection<SocialOAuthState>;

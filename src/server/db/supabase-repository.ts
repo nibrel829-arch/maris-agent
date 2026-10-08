@@ -8,7 +8,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { newId } from '@/lib/id';
-import type { PublishJob, UUID } from '@/types/domain';
+import type { EmailJob, PublishJob, UUID } from '@/types/domain';
 import type { ManagerTaskSnapshot } from '@/types/manager';
 import type { BaseRow, Collection, NibrexoRepository, PublishJobCollection } from './types';
 import { createSupabaseInboxRepository } from './supabase-inbox';
@@ -167,6 +167,23 @@ function createPublishJobCollection(client: SupabaseClient): PublishJobCollectio
   };
 }
 
+function createEmailJobCollection(client: SupabaseClient): import('./types').EmailJobCollection {
+  const base = createCollection<EmailJob>(client, 'email_jobs');
+  return {
+    ...base,
+    async findByIdempotencyKey(organizationId, key) {
+      const { data, error } = await client.from('email_jobs').select('*').eq('organization_id', organizationId).eq('idempotency_key', key).maybeSingle();
+      if (error) throw new Error(`Supabase read failed for email_jobs: ${error.message}`);
+      return (data as unknown as EmailJob) ?? null;
+    },
+    async claimDueJobs(nowIso, lockSeconds, limit) {
+      const { data, error } = await client.rpc('claim_due_email_jobs', { p_now: nowIso, p_lock_seconds: lockSeconds, p_limit: limit });
+      if (error) throw new Error(`Supabase claim failed for email_jobs: ${error.message}`);
+      return (data ?? []) as unknown as EmailJob[];
+    },
+  };
+}
+
 export function createSupabaseRepository(client: SupabaseClient): NibrexoRepository {
   const collection = <T extends BaseRow>(table: string): Collection<T> =>
     createCollection<T>(client, table);
@@ -182,6 +199,10 @@ export function createSupabaseRepository(client: SupabaseClient): NibrexoReposit
     emailTemplates: collection('email_templates'),
     emailLogs: collection('email_logs'),
     emailSequences: collection('email_sequences'),
+    emailEnrollments: collection('email_sequence_enrollments'),
+    emailJobs: createEmailJobCollection(client),
+    emailPreferences: collection('email_preferences'),
+    emailSteps: collection('email_steps'),
     socialAccounts: collection('social_accounts'),
     socialCredentials: collection('social_credentials'),
     socialOauthStates: collection('social_oauth_states'),

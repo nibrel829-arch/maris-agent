@@ -299,6 +299,7 @@ describe('SQL bootstrap artifact (supabase/scripts/provision_owner.sql)', () => 
       '0009_publish_jobs.sql',
       '0010_unified_inbox.sql',
       '0011_email_templates_sending.sql',
+      '0012_email_sequences_execution.sql',
     ]);
     expect(migrations.some((name) => name.includes('provision'))).toBe(false);
   });
@@ -479,6 +480,7 @@ describe('SQL-Editor bundle: the paste must be pure SQL', () => {
       '0009_publish_jobs.sql',
       '0010_unified_inbox.sql',
       '0011_email_templates_sending.sql',
+      '0012_email_sequences_execution.sql',
     ]);
 
     const bundle = renderMigrations(migrations);
