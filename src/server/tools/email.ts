@@ -129,8 +129,9 @@ export const createEmailSequenceTool = defineTool({
       .array(
         z.object({
           delayDays: z.number().int().min(0).max(365),
+          delayHours: z.number().int().min(0).max(23).default(0),
           templateId: z.string().uuid().nullable().default(null),
-          subject: z.string().min(1).max(300),
+          subject: z.string().min(1).max(300).optional(),
         }),
       )
       .min(1)
@@ -142,11 +143,10 @@ export const createEmailSequenceTool = defineTool({
       organization_id: ctx.organizationId,
       name: input.name,
       trigger: input.trigger,
-      steps: input.steps.map((step, index) => ({
-        id: `step-${index + 1}`,
+      steps: input.steps.map((step) => ({
+        templateId: step.templateId as unknown as string,
         delayDays: step.delayDays,
-        templateId: step.templateId,
-        subject: step.subject,
+        delayHours: (step as { delayHours?: number }).delayHours ?? 0,
       })),
       stop_conditions: [
         ...input.stopConditions,
@@ -155,7 +155,7 @@ export const createEmailSequenceTool = defineTool({
       ],
       status: 'draft',
       created_by: ctx.actor.userId,
-    });
+    } as unknown as never);
     return { sequence };
   },
 });

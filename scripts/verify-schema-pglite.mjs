@@ -2,13 +2,13 @@
 /**
  * Database-level verification of the Nibrexo schema + owner bootstrap.
  *
- * Runs the real migrations (0001-0010) and the real
+ * Runs the real migrations (0001-0012) and the real
  * `supabase/scripts/provision_owner.sql` against an embedded PostgreSQL
  * (@electric-sql/pglite, PostgreSQL compiled to WASM) with a minimal
  * Supabase-compatible `auth` shim. It proves, without touching the live
  * project:
  *
- *   1. all ten migrations apply in order to an empty database;
+ *   1. all twelve migrations apply in order to an empty database;
  *   2. an authenticated user with no membership cannot read the organization
  *      and cannot insert their own membership (the RLS chicken-and-egg that
  *      makes owner bootstrap an operator action);
@@ -162,6 +162,8 @@ for (const name of [
   '0008_social_connections.sql',
   '0009_publish_jobs.sql',
   '0010_unified_inbox.sql',
+  '0011_email_templates_sending.sql',
+  '0012_email_sequences_execution.sql',
 ]) {
   await db.exec(migrationSql(readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')));
   console.log(`  ✓ applied ${name}`);

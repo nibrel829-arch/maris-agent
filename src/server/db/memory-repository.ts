@@ -144,6 +144,53 @@ function createPublishJobCollection(store: Store): PublishJobCollection {
   };
 }
 
+function createEmailJobCollection(store: Store): import('./types').EmailJobCollection {
+  const base = createCollection<import('@/types/domain').EmailJob>(store, 'email_jobs');
+  const table = (): Map<string, Record<string, unknown>> => {
+    let t = store.get('email_jobs');
+    if (!t) {
+      t = new Map();
+      store.set('email_jobs', t);
+    }
+    return t;
+  };
+  return {
+    ...base,
+    async findByIdempotencyKey(organizationId, key) {
+      for (const row of table().values()) {
+        if (row.organization_id === organizationId && row.idempotency_key === key) return row as unknown as import('@/types/domain').EmailJob;
+      }
+      return null;
+    },
+    async claimDueJobs(nowIso, lockSeconds, limit) {
+      const now = Date.parse(nowIso);
+      const leaseMs = lockSeconds * 1000;
+      const due = [...table().values()].filter((row) => {
+        if ((row.attempts as number) >= (row.max_attempts as number)) return false;
+        const lockedAt = row.locked_at ? Date.parse(String(row.locked_at)) : NaN;
+        const locked = Number.isFinite(lockedAt) && now - (lockedAt as number) < leaseMs;
+        if (locked) return false;
+        if (String(row.status) !== 'queued') return false;
+        return Date.parse(String(row.run_at)) <= now;
+      });
+      due.sort((a, b) => Date.parse(String(a.run_at)) - Date.parse(String(b.run_at)));
+      const claimed: import('@/types/domain').EmailJob[] = [];
+      for (const row of due.slice(0, Math.max(0, limit))) {
+        const next = {
+          ...row,
+          status: 'sending',
+          locked_at: nowIso,
+          attempts: (row.attempts as number) + 1,
+          updated_at: nowIso,
+        };
+        table().set(String(row.id), next);
+        claimed.push(next as unknown as import('@/types/domain').EmailJob);
+      }
+      return claimed;
+    },
+  };
+}
+
 export function createMemoryRepository(seed?: Store): NibrexoRepository {
   const store: Store = seed ? new Map(seed) : new Map();
 
@@ -165,6 +212,10 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
     'email_templates',
     'email_logs',
     'email_sequences',
+    'email_sequence_enrollments',
+    'email_jobs',
+    'email_preferences',
+    'email_steps',
     'social_accounts',
     'research_briefs',
     'product_concepts',
@@ -193,6 +244,10 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
     emailTemplates: collection('email_templates'),
     emailLogs: collection('email_logs'),
     emailSequences: collection('email_sequences'),
+    emailEnrollments: collection('email_sequence_enrollments'),
+    emailJobs: createEmailJobCollection(store),
+    emailPreferences: collection('email_preferences'),
+    emailSteps: collection('email_steps'),
     socialAccounts: collection('social_accounts'),
     socialCredentials: collection('social_credentials'),
     socialOauthStates: collection('social_oauth_states'),

@@ -396,6 +396,84 @@ export interface EmailLog {
   updated_at: ISODateTime;
 }
 
+export type EmailSequenceStatus = 'draft' | 'active' | 'paused' | 'archived' | 'completed';
+
+export interface EmailSequenceStepDefinition {
+  templateId: UUID;
+  delayDays: number;
+  delayHours: number;
+}
+
+export interface EmailSequence {
+  id: UUID;
+  organization_id: UUID;
+  name: string;
+  description?: string | null;
+  trigger: string;
+  steps: EmailSequenceStepDefinition[];
+  stop_conditions: string[];
+  status: EmailSequenceStatus;
+  created_by: UUID | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+export type EnrollmentStatus = 'active' | 'paused' | 'completed' | 'cancelled' | 'unsubscribed' | 'bounced' | 'failed';
+
+export interface EmailSequenceEnrollment {
+  id: UUID;
+  organization_id: UUID;
+  sequence_id: UUID;
+  client_id: UUID | null;
+  email: string;
+  status: EnrollmentStatus;
+  current_step: number;
+  next_run_at: ISODateTime | null;
+  enrolled_by: UUID | null;
+  enrolled_at: ISODateTime;
+  completed_at: ISODateTime | null;
+  cancelled_at: ISODateTime | null;
+  last_error: string | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+export type EmailJobStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'skipped';
+
+export interface EmailJob {
+  id: UUID;
+  organization_id: UUID;
+  sequence_id: UUID | null;
+  enrollment_id: UUID | null;
+  client_id: UUID | null;
+  step_id: UUID | null;
+  to_email: string | null;
+  template_id: UUID | null;
+  variables: Record<string, string>;
+  idempotency_key: string;
+  run_at: ISODateTime;
+  status: EmailJobStatus;
+  attempts: number;
+  max_attempts: number;
+  last_error: string | null;
+  next_retry_at: ISODateTime | null;
+  locked_at: ISODateTime | null;
+  provider_message_id: string | null;
+  provider: string | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+export interface EmailPreference {
+  id: UUID;
+  organization_id: UUID;
+  email: string;
+  opted_out: boolean;
+  opted_out_at: ISODateTime | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
 /* -------------------------------------------------------------------------- */
 /* AI / Manager persistence (PDF #05 §8, PDF #08)                              */
 /* -------------------------------------------------------------------------- */
@@ -487,6 +565,16 @@ export type ActivityAction =
   | 'email.prepared'
   | 'email.sent'
   | 'email.failed'
+  | 'email.sequence.created'
+  | 'email.sequence.updated'
+  | 'email.sequence.deleted'
+  | 'email.sequence.started'
+  | 'email.sequence.paused'
+  | 'email.sequence.resumed'
+  | 'email.sequence.archived'
+  | 'email.sequence.enrolled'
+  | 'email.sequence.cancelled'
+  | 'email.sequence.completed'
   | 'report.generated'
   | 'research.brief_created'
   | 'quality.check_run'

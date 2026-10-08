@@ -60,6 +60,9 @@ export default async function EmailWorkspacePage({
             <Link className="btn-secondary" href="/email/templates">
               Browse templates <ArrowRightIcon size={15} />
             </Link>
+            <Link className="btn-secondary" href="/email/sequences">
+              Sequences <ArrowRightIcon size={15} />
+            </Link>
             <Link className="btn-secondary" href="/emails">
               Legacy view
             </Link>
