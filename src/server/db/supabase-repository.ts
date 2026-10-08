@@ -8,6 +8,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { newId } from '@/lib/id';
+import { taskStateDecision } from '@/server/manager/task-state';
 import type { EmailJob, PublishJob, UUID } from '@/types/domain';
 import type { ManagerTaskSnapshot } from '@/types/manager';
 import type { BaseRow, Collection, NibrexoRepository, PublishJobCollection } from './types';
@@ -243,24 +244,57 @@ export function createSupabaseRepository(client: SupabaseClient): NibrexoReposit
       },
 
       async update(id, organizationId, patch) {
+        const current = await client
+          .from('ai_tasks')
+          .select('state')
+          .eq('id', id)
+          .eq('organization_id', organizationId)
+          .maybeSingle();
+        if (current.error) throw new Error(`Supabase task read failed: ${current.error.message}`);
+        if (!current.data) return null;
+
+        const decision = taskStateDecision(String(current.data.state ?? ''), patch.state);
+        if (decision === 'refuse-cancel') {
+          const existing = await client
+            .from('ai_tasks')
+            .select('*')
+            .eq('id', id)
+            .eq('organization_id', organizationId)
+            .maybeSingle();
+          if (existing.error) throw new Error(`Supabase task read failed: ${existing.error.message}`);
+          return existing.data ? toSnapshot(existing.data as Record<string, unknown>) : null;
+        }
+
         const payload: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (patch.state !== undefined) payload.state = patch.state;
+        if (patch.state !== undefined && decision !== 'preserve-cancel') payload.state = patch.state;
         if (patch.intent !== undefined) payload.intent = patch.intent;
         if (patch.plan !== undefined) payload.plan = patch.plan;
         if (patch.stepResults !== undefined) payload.step_results = patch.stepResults;
         if (patch.trace !== undefined) payload.trace = patch.trace;
-        if (patch.result !== undefined) payload.result = patch.result;
+        if (patch.result !== undefined && decision !== 'preserve-cancel') payload.result = patch.result;
         if (patch.error !== undefined) payload.error = patch.error;
 
-        const { data, error } = await client
+        let query = client.from('ai_tasks').update(payload).eq('id', id).eq('organization_id', organizationId);
+        if (patch.state === 'CANCELLED') {
+          query = query.in('state', ['RECEIVED', 'PLANNING', 'EXECUTING', 'VERIFYING', 'CANCELLED']);
+        } else if (decision === 'preserve-cancel') {
+          query = query.eq('state', 'CANCELLED');
+        } else if (patch.state !== undefined) {
+          query = query.neq('state', 'CANCELLED');
+        }
+
+        const { data, error } = await query.select().maybeSingle();
+        if (error) throw new Error(`Supabase task update failed: ${error.message}`);
+        if (data) return toSnapshot(data as Record<string, unknown>);
+
+        const latest = await client
           .from('ai_tasks')
-          .update(payload)
+          .select('*')
           .eq('id', id)
           .eq('organization_id', organizationId)
-          .select()
           .maybeSingle();
-        if (error) throw new Error(`Supabase task update failed: ${error.message}`);
-        return data ? toSnapshot(data as Record<string, unknown>) : null;
+        if (latest.error) throw new Error(`Supabase task read failed: ${latest.error.message}`);
+        return latest.data ? toSnapshot(latest.data as Record<string, unknown>) : null;
       },
 
       async list(organizationId, options = {}) {

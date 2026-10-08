@@ -1,3 +1,4 @@
+import { listCapabilities } from '@/server/manager/capability-registry';
 import { listSkills, validateRegistry } from '@/server/manager/skill-registry';
 import { listTools, toolNames } from '@/server/manager/tool-registry';
 import { withApiContext } from '@/server/api/handler';
@@ -30,6 +31,7 @@ export const GET = withApiContext(async () => {
       manager: 'NIBREXO CEO / MANAGER',
       skills: listSkills(),
       tools: listTools(),
+      capabilities: listCapabilities(),
     },
   };
 });

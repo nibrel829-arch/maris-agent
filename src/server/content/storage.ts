@@ -120,7 +120,7 @@ export function createSupabaseMediaStorage(client: NibrexoSupabaseClient): Media
 /** Process-wide memory blob store so dev sessions share uploads across requests. */
 const globalForMediaBlobs = globalThis as unknown as { __nibrexoMediaStorage?: MediaStorage };
 
-function memoryMediaStorage(): MediaStorage {
+export function memoryMediaStorage(): MediaStorage {
   if (!globalForMediaBlobs.__nibrexoMediaStorage) {
     globalForMediaBlobs.__nibrexoMediaStorage = createMemoryMediaStorage();
   }
@@ -154,6 +154,20 @@ export async function getJobMediaStorage(): Promise<ServiceResult<MediaStorage>>
     );
   }
   return ok(createSupabaseMediaStorage(client));
+}
+
+/**
+ * Byte storage for a tool call. Memory repositories (tests and local dev)
+ * share the process-wide blob store so a saved image can be read back through
+ * the file route when the data backend is also memory.
+ */
+export async function resolveMediaStorage(
+  backend: 'supabase' | 'memory',
+): Promise<ServiceResult<MediaStorage>> {
+  if (backend === 'memory' || serverEnv().dataBackend === 'memory') {
+    return ok(memoryMediaStorage());
+  }
+  return getRequestMediaStorage();
 }
 
 export async function getRequestMediaStorage(): Promise<ServiceResult<MediaStorage>> {

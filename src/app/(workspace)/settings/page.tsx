@@ -6,6 +6,7 @@ import { actionsFor, roleLabel } from '@/server/auth/permissions';
 import { publicEnv, serverEnv } from '@/lib/env';
 import { ConfigurationRequired } from '@/components/layout/ConfigurationRequired';
 import { listAdapters } from '@/server/integrations/social/adapter';
+import { listCapabilities } from '@/server/manager/capability-registry';
 import { createEmailProvider } from '@/server/integrations/email/provider';
 import type { ModuleId } from '@/types/manager';
 
@@ -67,6 +68,34 @@ export default async function SettingsPage() {
             label="Email provider"
             value={provider.isConfigured() ? provider.name : 'not configured'}
           />
+        </Card>
+
+        <Card title="Manager capabilities">
+          {listCapabilities().map((capability) => (
+            <KeyValue
+              key={capability.id}
+              label={capability.name}
+              value={
+                <Badge
+                  tone={
+                    capability.status === 'available'
+                      ? 'success'
+                      : capability.status === 'needs_configuration'
+                        ? 'warning'
+                        : capability.status === 'assisted'
+                          ? 'info'
+                          : 'danger'
+                  }
+                >
+                  {capability.status.replace(/_/g, ' ')}
+                </Badge>
+              }
+            />
+          ))}
+          <p className="mt-3 text-xs leading-5 text-slate-500">
+            Status is computed from server configuration. Secret values are not shown. Unsupported and assisted
+            capabilities are not described as completed work.
+          </p>
         </Card>
 
         <Card title="Integration status">

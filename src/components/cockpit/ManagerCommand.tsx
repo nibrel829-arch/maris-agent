@@ -57,7 +57,10 @@ export function ManagerCommand({
     try {
       const response = await fetch('/api/manager/tasks', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Nibrexo-Async': '1',
+        },
         body: JSON.stringify({ request: message }),
       });
       const payload = (await response.json()) as ApiEnvelope<ManagerTaskSnapshot>;

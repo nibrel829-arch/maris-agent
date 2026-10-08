@@ -25,6 +25,7 @@ import type {
 } from '@/types/manager';
 import { checkPermission } from '@/server/auth/permissions';
 import { evaluateApproval } from './approval-policy';
+import { interpretToolOutput } from './capability-registry';
 import { getTool } from './tool-registry';
 import { resolveStepReferences } from './input-resolver';
 
@@ -46,8 +47,10 @@ export interface ExecutionOutcome {
   stepResults: StepResult[];
   /** Set when the run stopped because an approval is required. */
   haltedOnApproval: { stepId: string; approvalId: UUID; approval: ApprovalRecord } | null;
-  /** Set when the run stopped because of a non-retryable failure. */
+  /** Set when a non-retryable failure was recorded. Later independent steps still run. */
   haltedOnError: { stepId: string; issue: ManagerIssue } | null;
+  /** Set when the task was cancelled between steps. */
+  cancelled: boolean;
 }
 
 function emptyResult(step: PlanStep, status: StepResult['status']): StepResult {
@@ -96,7 +99,12 @@ async function requestApproval(
 export async function executeSteps(
   steps: readonly PlanStep[],
   env: ExecutionEnvironment,
-  options: { previous?: StepResult[]; startFromStepId?: string | null } = {},
+  options: {
+    previous?: StepResult[];
+    startFromStepId?: string | null;
+    shouldCancel?: () => Promise<boolean>;
+    onStep?: (results: StepResult[]) => Promise<void>;
+  } = {},
 ): Promise<ExecutionOutcome> {
   const previous = options.previous ?? [];
   const completed = new Set(
@@ -105,6 +113,11 @@ export async function executeSteps(
 
   const results: StepResult[] = [...previous];
   let started = options.startFromStepId == null;
+  let haltedOnError: ExecutionOutcome['haltedOnError'] = null;
+
+  const publish = async (): Promise<void> => {
+    if (options.onStep) await options.onStep([...results]);
+  };
 
   // A step produces exactly one result per run: replace any placeholder entry
   // (pending / failed from a previous attempt) instead of appending a duplicate.
@@ -115,6 +128,9 @@ export async function executeSteps(
   };
 
   for (const step of steps) {
+    if (await options.shouldCancel?.()) {
+      return { stepResults: results, haltedOnApproval: null, haltedOnError, cancelled: true };
+    }
     if (options.startFromStepId && step.id === options.startFromStepId) started = true;
     if (!started) continue;
     if (completed.has(step.id)) continue;
@@ -161,6 +177,7 @@ export async function executeSteps(
           ],
         }),
       );
+      await publish();
       continue;
     }
 
@@ -180,6 +197,7 @@ export async function executeSteps(
           ],
         }),
       );
+      await publish();
       continue;
     }
 
@@ -200,6 +218,7 @@ export async function executeSteps(
           ],
         }),
       );
+      await publish();
       continue;
     }
 
@@ -219,6 +238,7 @@ export async function executeSteps(
           ],
         }),
       );
+      await publish();
       continue;
     }
 
@@ -233,7 +253,13 @@ export async function executeSteps(
           approval: { id: approval.id, status: approval.status, expires_at: approval.expires_at },
         }),
       );
-      return { stepResults: results, haltedOnApproval: { stepId: step.id, approvalId: approval.id, approval }, haltedOnError: null };
+      await publish();
+      return {
+        stepResults: results,
+        haltedOnApproval: { stepId: step.id, approvalId: approval.id, approval },
+        haltedOnError: null,
+        cancelled: false,
+      };
     }
 
     // 5. Resolve references to earlier step outputs, then validate.
@@ -252,6 +278,7 @@ export async function executeSteps(
           })),
         }),
       );
+      await publish();
       continue;
     }
 
@@ -271,6 +298,7 @@ export async function executeSteps(
           ],
         }),
       );
+      await publish();
       continue;
     }
 
@@ -287,19 +315,24 @@ export async function executeSteps(
 
     try {
       const output = await tool.execute(parsed.data as never, context);
-      upsert(finish({ status: 'succeeded', output }));
+      const interpreted = interpretToolOutput(output);
+      if (interpreted.blocked && interpreted.issue) {
+        upsert(finish({ status: 'blocked', output, issues: [interpreted.issue] }));
+      } else {
+        upsert(finish({ status: 'succeeded', output }));
+      }
     } catch (error) {
       const issue = classifyError(error);
-      upsert(finish({ status: 'failed', issues: [issue] }));
-
-      // Non-retryable failures stop the run; the plan is not continued blindly.
-      if (!issue.retryable) {
-        return { stepResults: results, haltedOnApproval: null, haltedOnError: { stepId: step.id, issue } };
+      const blocked = issue.errorClass === 'not_configured' || issue.errorClass === 'unsupported';
+      upsert(finish({ status: blocked ? 'blocked' : 'failed', issues: [issue] }));
+      if (!blocked && !issue.retryable && !haltedOnError) {
+        haltedOnError = { stepId: step.id, issue };
       }
     }
+    await publish();
   }
 
-  return { stepResults: results, haltedOnApproval: null, haltedOnError: null };
+  return { stepResults: results, haltedOnApproval: null, haltedOnError, cancelled: false };
 }
 
 export { emptyResult, newId };

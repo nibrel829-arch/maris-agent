@@ -34,6 +34,7 @@ export function verify(
   const executed = results.filter((result) => result.status === 'succeeded');
   const failed = results.filter((result) => result.status === 'failed');
   const denied = results.filter((result) => result.status === 'denied');
+  const blocked = results.filter((result) => result.status === 'blocked');
   const awaiting = results.filter((result) => result.status === 'awaiting_approval');
   const skipped = results.filter((result) => result.status === 'skipped');
 
@@ -65,6 +66,15 @@ export function verify(
     });
   }
 
+  for (const result of blocked) {
+    issues.push(...result.issues);
+    checks.push({
+      name: `step-blocked:${result.stepId}`,
+      passed: false,
+      detail: result.issues[0]?.message ?? `Step ${result.stepId} is blocked and was not treated as complete.`,
+    });
+  }
+
   for (const result of skipped) {
     checks.push({
       name: `step-skipped:${result.stepId}`,
@@ -92,7 +102,11 @@ export function verify(
     detail: `${resolvedToolSteps} of ${plannedToolSteps} tool steps resolved.`,
   });
 
-  const ok = failed.length === 0 && denied.length === 0 && (executed.length > 0 || skipped.length > 0);
+  const ok =
+    failed.length === 0 &&
+    denied.length === 0 &&
+    blocked.length === 0 &&
+    (executed.length > 0 || skipped.length > 0);
 
   return { ok, checks, issues };
 }

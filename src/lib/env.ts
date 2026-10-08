@@ -84,6 +84,16 @@ export interface ServerEnv extends PublicEnv {
   emailFrom: string | null;
   /** Whether Resend credentials are present (truthy only when api key + from are set). */
   emailConfigured: boolean;
+  /** Server-only DeepSeek key. Null when unset — research synthesis stays disabled. */
+  deepseekApiKey: string | null;
+  deepseekModel: string;
+  deepseekConfigured: boolean;
+  /** Server-only Brave Search key. Null when unset — no web results are invented. */
+  braveSearchApiKey: string | null;
+  webSearchConfigured: boolean;
+  /** OpenAI Images model. Generation still requires OPENAI_API_KEY. */
+  imageModel: string;
+  imageGenerationConfigured: boolean;
 }
 
 export function publicEnv(): PublicEnv {
@@ -113,6 +123,8 @@ export function serverEnv(): ServerEnv {
   const emailFrom = optional(process.env.NIBREXO_EMAIL_FROM) ?? null;
   const resendKey = optional(process.env.RESEND_API_KEY) ?? null;
   const emailConfigured = emailProvider === 'resend' && Boolean(resendKey && emailFrom);
+  const deepseekApiKey = optional(process.env.DEEPSEEK_API_KEY) ?? null;
+  const braveSearchApiKey = optional(process.env.BRAVE_SEARCH_API_KEY) ?? null;
 
   return {
     ...pub,
@@ -135,6 +147,13 @@ export function serverEnv(): ServerEnv {
     emailProvider,
     emailFrom,
     emailConfigured,
+    deepseekApiKey,
+    deepseekModel: optional(process.env.NIBREXO_DEEPSEEK_MODEL) ?? 'deepseek-flash',
+    deepseekConfigured: Boolean(deepseekApiKey),
+    braveSearchApiKey,
+    webSearchConfigured: Boolean(braveSearchApiKey),
+    imageModel: optional(process.env.NIBREXO_IMAGE_MODEL) ?? 'gpt-image-1.5',
+    imageGenerationConfigured: Boolean(openAiApiKey),
     oauthClients: {
       // TikTok names its id `client_key`; the env var mirrors the provider.
       tiktok: {

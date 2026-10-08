@@ -9,6 +9,7 @@ description: >-
 tools:
   - create_research_brief
   - add_research_evidence
+  - conduct_sourced_research
   - list_research_briefs
   - log_activity
 work_types:

@@ -10,7 +10,9 @@ import { z } from 'zod';
 import medicalSafety from '@/knowledge/medical-safety.json';
 import researchStandards from '@/knowledge/research-standards.json';
 import productFramework from '@/knowledge/product-development-framework.json';
-import type { ResearchEvidence } from '@/types/domain';
+import { conductSourcedResearch } from '@/server/integrations/research/sourced-research';
+import { writeAudit } from '@/server/manager/audit';
+import type { ContentStatus, ResearchEvidence } from '@/types/domain';
 import { defineTool } from './define';
 
 const evidenceSchema = z.object({
@@ -102,6 +104,113 @@ export const addResearchEvidenceTool = defineTool({
   },
 });
 
+export const conductSourcedResearchTool = defineTool({
+  name: 'conduct_sourced_research',
+  description:
+    'Retrieve source-backed web results for a research brief and store only claims tied to those URLs. Does not invent statistics, companies or sources. Blocks when web search is not configured.',
+  permission: { module: 'ai', action: 'create' },
+  risk: 'low',
+  inputSchema: z.object({
+    briefId: z.string().uuid().optional(),
+    topic: z.string().min(1).max(200),
+    question: z.string().min(1).max(2000),
+    saveToLibrary: z.boolean().default(false),
+  }),
+  async execute(input, ctx) {
+    const existing = input.briefId
+      ? await ctx.repo.researchBriefs.get(input.briefId, ctx.organizationId)
+      : null;
+    const brief =
+      existing ??
+      (await ctx.repo.researchBriefs.insert({
+        organization_id: ctx.organizationId,
+        topic: input.topic,
+        domain: 'general',
+        question: input.question,
+        structure: [...researchStandards.requiredStructure],
+        evidence: [],
+        gaps: ['No evidence recorded yet.'],
+        recommendations: [],
+        medical_review_required: false,
+        created_by: ctx.actor.userId,
+      }));
+
+    const researched = await conductSourcedResearch({ question: input.question, signal: ctx.signal });
+
+    if (researched.status === 'needs_configuration') {
+      const gap = researched.message;
+      await ctx.repo.researchBriefs.update(brief.id, ctx.organizationId, {
+        gaps: [...brief.gaps.filter((item) => item !== gap), gap],
+      } as never);
+      return {
+        capabilityStatus: 'needs_configuration' as const,
+        executed: false,
+        brief: { ...brief, gaps: [...brief.gaps, gap] },
+        sources: [],
+        findings: [],
+        missingConfig: researched.missing,
+        message: researched.message,
+      };
+    }
+
+    if (researched.status === 'error') {
+      throw new Error(researched.message);
+    }
+
+    const updated = await ctx.repo.researchBriefs.update(brief.id, ctx.organizationId, {
+      evidence: [...brief.evidence, ...researched.findings],
+      gaps: [
+        ...brief.gaps.filter((gap) => !gap.startsWith('No evidence recorded yet')),
+        ...(researched.findings.length === 0
+          ? ['Web search returned no usable snippets. No findings were invented.']
+          : []),
+      ],
+      recommendations: researched.note ? [researched.note] : brief.recommendations,
+    } as never);
+
+    let contentItem = null;
+    if (input.saveToLibrary && researched.findings.length > 0) {
+      const body = [
+        researched.note,
+        '',
+        ...researched.findings.map(
+          (finding) => `- [${finding.grade}] ${finding.claim}\n  Source: ${finding.source}`,
+        ),
+      ].join('\n');
+      contentItem = await ctx.repo.contentItems.insert({
+        organization_id: ctx.organizationId,
+        title: `Research: ${input.topic}`.slice(0, 200),
+        caption: 'Sourced research notes. Not a published claim.',
+        body: body.slice(0, 20000),
+        status: 'DRAFT' as ContentStatus,
+        platforms: [],
+        media_url: null,
+        created_by: ctx.actor.userId,
+      });
+    }
+
+    if (researched.findings.length > 0) {
+      await writeAudit(ctx.repo, ctx.actor, {
+        action: 'research.sources_recorded',
+        entityType: 'research_brief',
+        entityId: brief.id,
+        metadata: { sources: researched.sources.length, findings: researched.findings.length },
+      });
+    }
+
+    return {
+      capabilityStatus: 'available' as const,
+      executed: true,
+      brief: updated,
+      sources: researched.sources,
+      findings: researched.findings,
+      contentItem,
+      model: researched.model,
+      message: researched.note,
+    };
+  },
+});
+
 export const listResearchBriefsTool = defineTool({
   name: 'list_research_briefs',
   description: 'List research briefs for the organization.',
@@ -165,6 +274,7 @@ export const createProductConceptTool = defineTool({
     fileTypes: z.array(z.string().max(60)).max(20).default([]),
     differentiation: z.array(z.string().max(300)).max(20).default([]),
     pricingConsiderations: z.array(z.string().max(300)).max(20).default([]),
+    saveToLibrary: z.boolean().default(false),
   }),
   async execute(input, ctx) {
     const openQuestions: string[] = [];
@@ -196,8 +306,30 @@ export const createProductConceptTool = defineTool({
       created_by: ctx.actor.userId,
     });
 
+    let contentItem = null;
+    if (input.saveToLibrary) {
+      contentItem = await ctx.repo.contentItems.insert({
+        organization_id: ctx.organizationId,
+        title: input.name,
+        caption: 'Product concept draft. Open questions are not resolved facts.',
+        body: [
+          `Problem: ${input.problem}`,
+          `Target customer: ${input.targetCustomer}`,
+          input.missingOpportunity ? `Opportunity gap: ${input.missingOpportunity}` : null,
+          openQuestions.length ? `Open questions:\n- ${openQuestions.join('\n- ')}` : null,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
+        status: 'DRAFT' as ContentStatus,
+        platforms: [],
+        media_url: null,
+        created_by: ctx.actor.userId,
+      });
+    }
+
     return {
       concept,
+      contentItem,
       reasoningChain: chain,
       openQuestions,
       completeElements: chain.length - openQuestions.length,
@@ -232,6 +364,7 @@ export const createVisualConceptTool = defineTool({
     formats: z.array(z.string().max(80)).min(1).max(15),
     messageHierarchy: z.array(z.string().max(300)).min(1).max(10),
     assetList: z.array(z.string().max(300)).max(40).default([]),
+    saveToLibrary: z.boolean().default(false),
   }),
   async execute(input, ctx) {
     const concept = await ctx.repo.visualConcepts.insert({
@@ -252,7 +385,25 @@ export const createVisualConceptTool = defineTool({
       ],
       created_by: ctx.actor.userId,
     });
-    return { concept };
+    let contentItem = null;
+    if (input.saveToLibrary) {
+      contentItem = await ctx.repo.contentItems.insert({
+        organization_id: ctx.organizationId,
+        title: `${input.title} — image concept`,
+        caption: 'Visual concept specification. Not a rendered image.',
+        body: [
+          input.purpose,
+          `Formats: ${input.formats.join(', ')}`,
+          `Message hierarchy: ${input.messageHierarchy.join(' → ')}`,
+          'No image file has been generated by this step.',
+        ].join('\n\n'),
+        status: 'DRAFT' as ContentStatus,
+        platforms: [],
+        media_url: null,
+        created_by: ctx.actor.userId,
+      });
+    }
+    return { concept, contentItem };
   },
 });
 
@@ -270,6 +421,7 @@ export const listVisualConceptsTool = defineTool({
 export const researchTools = [
   createResearchBriefTool,
   addResearchEvidenceTool,
+  conductSourcedResearchTool,
   listResearchBriefsTool,
   runMedicalSafetyCheckTool,
 ];

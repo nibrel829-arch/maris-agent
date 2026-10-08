@@ -25,9 +25,11 @@ import type {
   ManagerTaskSnapshot,
   ManagerTraceEntry,
   NextBestAction,
+  OutputReference,
   PlanStep,
   QualityControlResult,
   StepResult,
+  TaskCompletion,
   VerificationResult,
 } from '@/types/manager';
 import { isAiEnabled } from '@/server/ai/client';
@@ -38,12 +40,15 @@ import { getSkill } from './skill-registry';
 import { classify, understand } from './understand';
 import { verify } from './verifier';
 import { isExpired } from './approval-policy';
+import { claimTaskRun, isTaskRunning, releaseTaskRun } from './run-lock';
 
 export interface OrchestratorInput {
   request: string;
   actor: ActorContext;
   repo: NibrexoRepository;
   signal?: AbortSignal;
+  /** Persist the plan and return before tool execution. Used by the async API. */
+  deferExecution?: boolean;
 }
 
 const nowIso = (): string => new Date().toISOString();
@@ -113,6 +118,8 @@ const ENTITY_LABELS: Record<string, string> = {
   campaignPlan: 'Campaign plan',
   socialPlan: 'Social plan',
   communityPlan: 'Community plan',
+  videoDraft: 'Video draft',
+  imageAsset: 'Image asset',
 };
 
 const ENTITY_KEYS = Object.keys(ENTITY_LABELS);
@@ -226,6 +233,17 @@ function nextBestActions(
   }
 
   for (const result of results) {
+    if (result.status === 'blocked') {
+      actions.push({
+        title: `Unblock: ${result.issues[0]?.message ?? result.stepId}`,
+        rationale: 'This step did not finish. Configure the missing capability or complete the assisted step. Nothing was invented in its place.',
+        skillId: 'manager-orchestration',
+        requiresApproval: false,
+      });
+    }
+  }
+
+  for (const result of results) {
     if (result.status !== 'skipped') continue;
     const message = result.issues[0]?.message ?? 'This step needs more information.';
     actions.push({
@@ -276,8 +294,74 @@ async function persist(
   repo: NibrexoRepository,
   snapshot: ManagerTaskSnapshot,
 ): Promise<ManagerTaskSnapshot> {
+  const current = await repo.tasks.get(snapshot.id, snapshot.organizationId);
+  // A cancel from another request must not be overwritten by a later stage write.
+  if (current?.state === 'CANCELLED' && snapshot.state !== 'CANCELLED') return current;
   const updated = await repo.tasks.update(snapshot.id, snapshot.organizationId, snapshot);
   return updated ?? snapshot;
+}
+
+function collectReferences(results: readonly StepResult[]): OutputReference[] {
+  const references: OutputReference[] = [];
+  const seen = new Set<string>();
+  const push = (reference: OutputReference) => {
+    const key = `${reference.kind}:${reference.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    references.push(reference);
+  };
+
+  for (const result of results) {
+    if (!result.output || typeof result.output !== 'object') continue;
+    const output = result.output as Record<string, unknown>;
+    const contentItem = output.contentItem as { id?: string; title?: string } | null;
+    if (contentItem?.id) {
+      push({
+        kind: 'content_item',
+        id: contentItem.id,
+        label: contentItem.title ?? 'Content Library item',
+        href: `/content/${contentItem.id}`,
+      });
+    }
+    const brief = output.brief as { id?: string; topic?: string } | null;
+    if (brief?.id) {
+      push({ kind: 'research_brief', id: brief.id, label: brief.topic ?? 'Research brief', href: '/research' });
+    }
+    const concept = output.concept as { id?: string; name?: string; title?: string } | null;
+    if (concept?.id) {
+      push({
+        kind: concept.name ? 'product_concept' : 'visual_concept',
+        id: concept.id,
+        label: concept.name ?? concept.title ?? 'Concept',
+        href: concept.name ? '/product' : '/marketing',
+      });
+    }
+    const media = output.media as { id?: string } | null;
+    if (media?.id) {
+      push({
+        kind: 'media_file',
+        id: media.id,
+        label: 'Saved media file',
+        href: `/api/workspace/content/media/${media.id}/file`,
+      });
+    }
+  }
+  return references;
+}
+
+function completionFor(
+  state: ManagerTaskSnapshot['state'],
+  results: readonly StepResult[],
+): TaskCompletion {
+  if (state === 'CANCELLED') return 'cancelled';
+  if (state === 'WAITING_APPROVAL') return 'awaiting_approval';
+  const succeeded = results.some((result) => result.status === 'succeeded');
+  const incomplete = results.some(
+    (result) => result.status === 'failed' || result.status === 'denied' || result.status === 'blocked',
+  );
+  if (state === 'FAILED' && succeeded && incomplete) return 'partial';
+  if (state === 'FAILED') return 'failed';
+  return 'complete';
 }
 
 export async function runManagerTask(input: OrchestratorInput): Promise<ManagerTaskSnapshot> {
@@ -353,7 +437,31 @@ export async function runManagerTask(input: OrchestratorInput): Promise<ManagerT
 
   snapshot = await persist(repo, { ...snapshot, plan, trace: [...traceLog] });
 
+  if (input.deferExecution) return snapshot;
+
   return executeAndFinalise(snapshot, intent, plan, { actor, repo, taskId, runId, signal: input.signal });
+}
+
+/** Continues a planned task that has not reached a terminal result. */
+export async function continueManagerTask(params: {
+  taskId: UUID;
+  actor: ActorContext;
+  repo: NibrexoRepository;
+  signal?: AbortSignal;
+}): Promise<ManagerTaskSnapshot> {
+  const snapshot = await params.repo.tasks.get(params.taskId, params.actor.organizationId);
+  if (!snapshot) throw new Error('Task not found or not in this organization.');
+  if (!snapshot.plan || !snapshot.intent) throw new Error('Task has no plan to execute.');
+  if (snapshot.result && ['COMPLETED', 'FAILED', 'CANCELLED', 'WAITING_APPROVAL'].includes(snapshot.state)) {
+    return snapshot;
+  }
+  return executeAndFinalise(snapshot, snapshot.intent, snapshot.plan, {
+    actor: params.actor,
+    repo: params.repo,
+    taskId: snapshot.id,
+    runId: newId(),
+    ...(params.signal ? { signal: params.signal } : {}),
+  });
 }
 
 export async function resumeManagerTask(params: {
@@ -456,6 +564,31 @@ async function executeAndFinalise(
     signal?: AbortSignal;
   },
 ): Promise<ManagerTaskSnapshot> {
+  if (!claimTaskRun(snapshot.id)) {
+    const current = await env.repo.tasks.get(snapshot.id, snapshot.organizationId);
+    return current ?? snapshot;
+  }
+
+  try {
+    return await executeAndFinaliseLocked(snapshot, intent, plan, env);
+  } finally {
+    releaseTaskRun(snapshot.id);
+  }
+}
+
+async function executeAndFinaliseLocked(
+  snapshot: ManagerTaskSnapshot,
+  intent: ManagerIntent,
+  plan: ManagerPlan,
+  env: {
+    actor: ActorContext;
+    repo: NibrexoRepository;
+    taskId: UUID;
+    runId: string;
+    approvedStepIds?: readonly string[];
+    signal?: AbortSignal;
+  },
+): Promise<ManagerTaskSnapshot> {
   const traceLog = [...snapshot.trace];
   const { actor, repo } = env;
 
@@ -470,7 +603,41 @@ async function executeAndFinalise(
     organizationId: snapshot.organizationId,
     ...(env.approvedStepIds ? { approvedStepIds: env.approvedStepIds } : {}),
     ...(env.signal ? { signal: env.signal } : {}),
-  }, { previous: snapshot.stepResults });
+  }, {
+    previous: snapshot.stepResults,
+    shouldCancel: async () => {
+      const current = await repo.tasks.get(snapshot.id, snapshot.organizationId);
+      return current?.state === 'CANCELLED';
+    },
+    onStep: async (stepResults) => {
+      const current = await repo.tasks.get(snapshot.id, snapshot.organizationId);
+      if (current?.state === 'CANCELLED') return;
+      snapshot = await persist(repo, {
+        ...snapshot,
+        state: 'EXECUTING',
+        stepResults,
+        trace: [...traceLog],
+      });
+    },
+  });
+
+  if (outcome.cancelled) {
+    const cancelled = await persist(repo, {
+      ...snapshot,
+      state: 'CANCELLED',
+      stepResults: outcome.stepResults,
+      trace: [...traceLog, trace('execute', 'Task cancelled. Remaining steps were not run.')],
+      error: 'Cancelled by the operator. Completed steps were kept; nothing further was executed.',
+      result: null,
+    });
+    await writeAudit(repo, actor, {
+      action: 'manager.task.cancelled',
+      entityType: 'manager_task',
+      entityId: snapshot.id,
+      metadata: { state: 'CANCELLED' },
+    });
+    return cancelled;
+  }
 
   for (const result of outcome.stepResults) {
     if (result.status === 'succeeded') {
@@ -524,21 +691,30 @@ async function executeAndFinalise(
   const { artifacts, uncertainties } = buildArtifacts(plan.steps, outcome.stepResults, intent.deliverable);
 
   const pendingApprovals = approvals.filter((approval) => approval.status === 'pending');
+  const blockedOrFailed = outcome.stepResults.some(
+    (result) => result.status === 'failed' || result.status === 'denied' || result.status === 'blocked',
+  );
 
   // A task with an undecided approval is never reported as complete, even if
-  // the remaining independent steps finished.
+  // the remaining independent steps finished. Blocked or failed required steps
+  // also keep the task out of COMPLETED.
   const state: ManagerTaskSnapshot['state'] =
     outcome.haltedOnApproval || pendingApprovals.length > 0
       ? 'WAITING_APPROVAL'
-      : outcome.haltedOnError || quality?.blocking
+      : outcome.haltedOnError || quality?.blocking || blockedOrFailed
         ? 'FAILED'
         : 'COMPLETED';
+
+  const completion = completionFor(state, outcome.stepResults);
+  const references = collectReferences(outcome.stepResults);
 
   const result: ManagerResult = {
     taskId: snapshot.id,
     state:
       state === 'WAITING_APPROVAL' ? 'WAITING_APPROVAL' : state === 'FAILED' ? 'FAILED' : 'COMPLETED',
-    summary: buildSummary(intent, plan, outcome.stepResults, quality, state),
+    completion,
+    references,
+    summary: buildSummary(intent, plan, outcome.stepResults, quality, state, completion, references),
     artifacts: artifacts.map((artifact) => ({
       ...artifact,
       uncertainties: [...new Set([...artifact.uncertainties, ...uncertainties])],
@@ -572,8 +748,14 @@ async function executeAndFinalise(
     stepResults: outcome.stepResults,
     trace: traceLog,
     result,
-    error: outcome.haltedOnError ? outcome.haltedOnError.issue.message : null,
+    error:
+      outcome.haltedOnError?.issue.message ??
+      outcome.stepResults.find((stepResult) => stepResult.status === 'blocked' || stepResult.status === 'failed')
+        ?.issues[0]?.message ??
+      null,
   });
+
+  if (finalSnapshot.state === 'CANCELLED') return finalSnapshot;
 
   await writeAudit(repo, actor, {
     action: state === 'COMPLETED' ? 'manager.task.completed' : 'manager.task.failed',
@@ -591,29 +773,89 @@ function buildSummary(
   results: readonly StepResult[],
   quality: QualityControlResult | null,
   state: ManagerTaskSnapshot['state'],
+  completion: TaskCompletion,
+  references: readonly OutputReference[],
 ): string {
   const succeeded = results.filter((result) => result.status === 'succeeded').length;
   const skipped = results.filter((result) => result.status === 'skipped').length;
   const awaiting = results.filter((result) => result.status === 'awaiting_approval').length;
   const failed = results.filter((result) => result.status === 'failed').length;
+  const blocked = results.filter((result) => result.status === 'blocked').length;
 
   const parts = [
     `Classified as ${intent.primary.replace(/_/g, ' ')} (confidence ${(intent.confidence * 100).toFixed(0)}%).`,
     `Planned ${plan.steps.length} step(s) across ${plan.skills.length} skill(s).`,
-    `${succeeded} executed, ${skipped} skipped for missing input, ${awaiting} awaiting approval, ${failed} failed.`,
+    `${succeeded} executed, ${skipped} skipped for missing input, ${awaiting} awaiting approval, ${blocked} blocked, ${failed} failed.`,
   ];
+
+  if (references.length > 0) {
+    parts.push(`Saved: ${references.map((reference) => reference.label).slice(0, 6).join('; ')}.`);
+  }
 
   if (quality) parts.push(`Quality score ${quality.score}/100${quality.blocking ? ' with blocking findings' : ''}.`);
 
   if (state === 'WAITING_APPROVAL') {
     parts.push('Work is paused until the pending approval is decided. No external action has been taken.');
+  } else if (completion === 'partial') {
+    const blockers = results
+      .filter((result) => result.status === 'blocked' || result.status === 'failed')
+      .map((result) => result.issues[0]?.message)
+      .filter((message): message is string => Boolean(message))
+      .slice(0, 3);
+    parts.push('Partial — not complete. Some steps produced saved output and others did not.');
+    if (blockers.length > 0) parts.push(blockers.join(' '));
   } else if (state === 'FAILED') {
-    parts.push('The task stopped before completion; see the reported issues.');
+    parts.push('The task is not complete. See the reported issues. No success was invented for a blocked step.');
   } else {
     parts.push('Delivered. Prepared actions are marked as prepared, not completed.');
   }
 
   return parts.join(' ');
+}
+
+export async function retryManagerTask(params: {
+  taskId: UUID;
+  actor: ActorContext;
+  repo: NibrexoRepository;
+}): Promise<ManagerTaskSnapshot> {
+  const snapshot = await params.repo.tasks.get(params.taskId, params.actor.organizationId);
+  if (!snapshot) throw new Error('Task not found or not in this organization.');
+  if (!snapshot.plan || !snapshot.intent) throw new Error('Task has no plan to retry.');
+  if (snapshot.state === 'CANCELLED') {
+    throw new Error('Cancelled tasks are not retried. Submit a new request.');
+  }
+  if (snapshot.state === 'WAITING_APPROVAL') {
+    throw new Error('This task is waiting for approval. Decide the approval instead of retrying.');
+  }
+  if (isTaskRunning(snapshot.id)) {
+    throw new Error('This task is already running.');
+  }
+
+  const stepResults = snapshot.stepResults.filter(
+    (result) =>
+      result.status === 'succeeded' ||
+      result.status === 'denied' ||
+      result.status === 'skipped' ||
+      result.status === 'awaiting_approval',
+  );
+  const traceLog = [
+    ...snapshot.trace,
+    trace('execute', 'Retry requested. Succeeded steps are kept; blocked and failed steps run again.'),
+  ];
+
+  await writeAudit(params.repo, params.actor, {
+    action: 'manager.task.retried',
+    entityType: 'manager_task',
+    entityId: snapshot.id,
+    metadata: { keptSteps: stepResults.length },
+  });
+
+  return executeAndFinalise(
+    { ...snapshot, stepResults, trace: traceLog, error: null },
+    snapshot.intent,
+    snapshot.plan,
+    { actor: params.actor, repo: params.repo, taskId: snapshot.id, runId: newId() },
+  );
 }
 
 export type { ManagerTaskSnapshot };

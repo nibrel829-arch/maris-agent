@@ -403,6 +403,8 @@ function templates(
     }
   }
 
+  appendRequestedCapabilities(steps, intent, understood, openQuestions, topic, request);
+
   // Medical safety gate: any request touching dental/medical subject matter is
   // screened before delivery, whatever its business work type (CEO spec §8).
   if (intent.medicalDomain && !steps.some((step) => step.toolName === 'run_medical_safety_check')) {
@@ -427,6 +429,126 @@ function templates(
   });
 
   return { steps, openQuestions };
+}
+
+interface RequestedWork {
+  research: boolean;
+  image: boolean;
+  video: boolean;
+  library: boolean;
+}
+
+/** What the user actually asked to produce, independent of the primary work type. */
+export function requestedWork(request: string): RequestedWork {
+  const lower = request.toLowerCase();
+  return {
+    research: /\b(research|investigate|sources?|evidence|competitor analysis)\b/.test(lower),
+    image: /\b(image|images|visual|graphic|picture|illustration|thumbnail|image concept)\b/.test(lower),
+    video: /\b(video|videos|vids|reel|storyboard|video draft)\b/.test(lower),
+    library: /\b(content library|save (all |the |these )?(completed )?assets|save to (my |the )?library)\b/.test(lower),
+  };
+}
+
+function appendRequestedCapabilities(
+  steps: StepDraft[],
+  intent: ManagerIntent,
+  understood: UnderstoodRequest,
+  openQuestions: string[],
+  topic: string,
+  request: string,
+): void {
+  const flags = requestedWork(request);
+  const wantsResearch =
+    flags.research || intent.primary === 'research' || intent.primary === 'dental_research';
+  const library = flags.library;
+
+  if (wantsResearch && !steps.some((step) => step.toolName === 'conduct_sourced_research')) {
+    const briefIndex = steps.findIndex((step) => step.toolName === 'create_research_brief');
+    steps.push({
+      title: 'Retrieve sourced findings',
+      rationale:
+        'Current or external facts are recorded only from retrieved sources. A missing search provider blocks this step instead of inventing evidence.',
+      skillId: intent.medicalDomain ? 'dental-research' : 'research-intelligence',
+      toolName: 'conduct_sourced_research',
+      input: {
+        ...(briefIndex >= 0 ? { briefId: stepRef(`step-${briefIndex + 1}`, 'brief.id') } : {}),
+        topic: topic.slice(0, 200),
+        question: understood.objective.slice(0, 2000),
+        saveToLibrary: library,
+      },
+      stage: 'execute',
+    });
+  }
+
+  if (flags.image && !steps.some((step) => step.toolName === 'create_visual_concept')) {
+    steps.push({
+      title: 'Prepare an image concept',
+      rationale: 'A visual specification is saved before any pixels are requested.',
+      skillId: 'visual-content',
+      toolName: 'create_visual_concept',
+      input: {
+        title: topic.slice(0, 200),
+        purpose: request.slice(0, 500),
+        formats: ['1080x1080'],
+        messageHierarchy: [topic.slice(0, 300)],
+        saveToLibrary: true,
+      },
+      stage: 'execute',
+    });
+  }
+
+  if (flags.image || library) {
+    for (const step of steps) {
+      if (step.toolName === 'create_visual_concept') step.input = { ...step.input, saveToLibrary: true };
+    }
+  }
+  if (library) {
+    for (const step of steps) {
+      if (step.toolName === 'create_product_concept') step.input = { ...step.input, saveToLibrary: true };
+    }
+  }
+
+  if (flags.image && !steps.some((step) => step.toolName === 'generate_image_asset')) {
+    const visualIndex = steps.findIndex((step) => step.toolName === 'create_visual_concept');
+    steps.push({
+      title: 'Generate the image and save it',
+      rationale:
+        'Uses the native image API when configured. Arena Agent Mode is not called. A missing key blocks the step and saves no placeholder image.',
+      skillId: 'visual-content',
+      toolName: 'generate_image_asset',
+      input: {
+        title: topic.slice(0, 200),
+        prompt: request.slice(0, 1000),
+        ...(visualIndex >= 0 ? { conceptTitle: stepRef(`step-${visualIndex + 1}`, 'concept.title') } : {}),
+      },
+      stage: 'execute',
+    });
+  }
+
+  if (flags.video && !steps.some((step) => step.toolName === 'prepare_video_draft')) {
+    steps.push({
+      title: 'Save a video draft package',
+      rationale: 'The feasible Google Vids step is a storyboard saved to the Content Library. No video file is rendered here.',
+      skillId: 'visual-content',
+      toolName: 'prepare_video_draft',
+      input: { title: topic.slice(0, 200), brief: request.slice(0, 4000) },
+      stage: 'execute',
+    });
+    openQuestions.push(
+      'Google Vids cannot be driven by a public API. The draft package can be saved; rendering and MP4 export stay assisted in Google Vids.',
+    );
+  }
+
+  if (flags.video && !steps.some((step) => step.toolName === 'export_video_file')) {
+    steps.push({
+      title: 'Export the video file',
+      rationale: 'A rendered video is not claimed unless a file exists. This step stays assisted because Google Vids has no public export API.',
+      skillId: 'visual-content',
+      toolName: 'export_video_file',
+      input: { title: topic.slice(0, 200) },
+      stage: 'execute',
+    });
+  }
 }
 
 /** Detects an explicit request for an external action. */

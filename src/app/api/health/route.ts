@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { publicEnv, serverEnv } from '@/lib/env';
 import { listAdapters } from '@/server/integrations/social/adapter';
+import { listCapabilities } from '@/server/manager/capability-registry';
 import { createEmailProvider } from '@/server/integrations/email/provider';
 
 export const dynamic = 'force-dynamic';
@@ -31,6 +32,12 @@ export async function GET(): Promise<NextResponse> {
       emailConfigured: createEmailProvider().isConfigured(),
     },
     integrations: listAdapters(),
+    capabilities: listCapabilities().map((capability) => ({
+      id: capability.id,
+      status: capability.status,
+      operations: capability.operations,
+      requiredConfig: capability.requiredConfig,
+    })),
     timestamp: new Date().toISOString(),
   });
 }

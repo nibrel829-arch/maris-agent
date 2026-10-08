@@ -259,7 +259,24 @@ export type StepStatus =
   | 'succeeded'
   | 'failed'
   | 'skipped'
-  | 'denied';
+  | 'denied'
+  | 'blocked';
+
+/** How completely the requested work finished. Distinct from the PDF state machine. */
+export type TaskCompletion =
+  | 'complete'
+  | 'partial'
+  | 'failed'
+  | 'awaiting_approval'
+  | 'cancelled';
+
+export interface OutputReference {
+  kind: 'content_item' | 'research_brief' | 'product_concept' | 'visual_concept' | 'media_file' | 'quality_report';
+  id: string;
+  label: string;
+  /** In-app path. Null when the record has no detail route. */
+  href: string | null;
+}
 
 export type ErrorClass =
   | 'validation'
@@ -348,7 +365,14 @@ export interface ManagerArtifact {
 export interface ManagerResult {
   taskId: UUID;
   state: 'COMPLETED' | 'FAILED' | 'WAITING_APPROVAL' | 'CANCELLED';
+  /**
+   * Honest finish line. `partial` means some steps produced saved output and
+   * others failed, were blocked, or remain assisted. Never treat partial as done.
+   */
+  completion: TaskCompletion;
   summary: string;
+  /** Saved records the operator can open. Empty when nothing was persisted. */
+  references: OutputReference[];
   artifacts: ManagerArtifact[];
   quality: QualityControlResult | null;
   verification: VerificationResult | null;

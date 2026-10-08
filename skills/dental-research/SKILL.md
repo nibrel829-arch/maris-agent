@@ -10,6 +10,7 @@ description: >-
 tools:
   - create_research_brief
   - add_research_evidence
+  - conduct_sourced_research
   - run_medical_safety_check
   - list_research_briefs
 work_types:

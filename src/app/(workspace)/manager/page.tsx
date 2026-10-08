@@ -1,4 +1,5 @@
 import { ManagerWorkspace } from '@/features/manager/ManagerWorkspace';
+import { listCapabilities } from '@/server/manager/capability-registry';
 import { listSkills } from '@/server/manager/skill-registry';
 import { resolveActor } from '@/server/auth/actor';
 import { actionsFor } from '@/server/auth/permissions';
@@ -18,6 +19,7 @@ export default async function ManagerPage({
       canDecide={canDecide}
       initialRequest={params.request ?? ''}
       initialTaskId={params.task ?? null}
+      capabilities={listCapabilities()}
       skills={listSkills()}
     />
   );

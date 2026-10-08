@@ -9,10 +9,24 @@ describe('NIBREXO CEO / Manager — orchestration (integration)', () => {
   it('completes a research request and produces a research brief artifact', async () => {
     const snapshot = await run('Research the market for dental scheduling software');
 
-    expect(snapshot.state).toBe('COMPLETED');
     expect(snapshot.intent?.primary).toBe('research');
     expect(snapshot.result?.artifacts.length).toBeGreaterThan(0);
     expect(snapshot.result?.aiEnabled).toBe(false);
+    // Without a search provider the sourced step is blocked. The brief is saved,
+    // but the task is not reported complete and no evidence is invented.
+    if (!process.env.BRAVE_SEARCH_API_KEY) {
+      expect(snapshot.state).not.toBe('COMPLETED');
+      expect(snapshot.result?.completion).toBe('partial');
+      expect(snapshot.stepResults.some((result) => result.status === 'blocked')).toBe(true);
+      const brief = snapshot.result?.artifacts.find((artifact) => {
+        const content = artifact.content as Record<string, unknown> | null;
+        return Boolean(content && 'brief' in content);
+      });
+      const evidence = (brief?.content as { brief?: { evidence?: unknown[] } } | undefined)?.brief?.evidence ?? [];
+      expect(evidence).toEqual([]);
+    } else {
+      expect(['COMPLETED', 'FAILED']).toContain(snapshot.state);
+    }
 
     const brief = snapshot.result?.artifacts.find((artifact) => {
       const content = artifact.content as Record<string, unknown> | null;

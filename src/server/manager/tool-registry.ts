@@ -16,6 +16,7 @@ import {
 } from '@/server/tools/research';
 import { contentTools, socialTools } from '@/server/tools/content';
 import { emailTools } from '@/server/tools/email';
+import { mediaTools } from '@/server/tools/media';
 import { operationsTools, systemTools } from '@/server/tools/operations';
 
 type AnyTool = ToolDefinition<unknown, unknown>;
@@ -28,6 +29,7 @@ const ALL_TOOLS: AnyTool[] = [
   ...contentTools,
   ...socialTools,
   ...emailTools,
+  ...mediaTools,
   ...operationsTools,
   ...systemTools,
 ] as unknown as AnyTool[];

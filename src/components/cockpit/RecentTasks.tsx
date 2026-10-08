@@ -19,6 +19,17 @@ function humanState(state: string): string {
   return state.replace(/_/g, ' ').toLowerCase().replace(/^./, (letter) => letter.toUpperCase());
 }
 
+export function displayState(task: { state: string; result?: { completion?: string } | null }): {
+  label: string;
+  tone: 'info' | 'success' | 'warning' | 'danger' | 'neutral';
+} {
+  if (task.result?.completion === 'partial') return { label: 'Partial', tone: 'warning' };
+  if (task.result?.completion === 'awaiting_approval' || task.state === 'WAITING_APPROVAL') {
+    return { label: 'Waiting for you', tone: 'warning' };
+  }
+  return { label: humanState(task.state), tone: STATE_TONE[task.state] ?? 'neutral' };
+}
+
 export function RecentTasks({
   tasks,
   limit,
@@ -51,7 +62,7 @@ export function RecentTasks({
             <span className="min-w-0 flex-1">
               <span className="flex flex-wrap items-center justify-between gap-2">
                 <span className="truncate text-sm font-medium text-slate-200 group-hover:text-white">{task.intent?.objective ?? task.request}</span>
-                <Badge tone={STATE_TONE[task.state] ?? 'neutral'}>{humanState(task.state)}</Badge>
+                <Badge tone={displayState(task).tone}>{displayState(task).label}</Badge>
               </span>
               <span className="mt-1 block line-clamp-1 text-xs leading-5 text-slate-500">
                 {nextAction ? nextAction.title : task.request}

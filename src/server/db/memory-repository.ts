@@ -10,6 +10,7 @@ import { newId } from '@/lib/id';
 import type { PublishJob, UUID } from '@/types/domain';
 import type { BaseRow, Collection, NibrexoRepository, PublishJobCollection } from './types';
 import type { ManagerTaskSnapshot } from '@/types/manager';
+import { taskStateDecision } from '@/server/manager/task-state';
 import { createMemoryInboxRepository } from './memory-inbox';
 
 export type Store = Map<string, Map<string, Record<string, unknown>>>;
@@ -279,7 +280,12 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
       async update(id, organizationId, patch) {
         const row = taskStore().get(id);
         if (!row || row.organizationId !== organizationId) return null;
-        const next = { ...row, ...patch, updatedAt: nowIso() };
+        const decision = taskStateDecision(String(row.state ?? ''), patch.state);
+        if (decision === 'refuse-cancel') return row as unknown as ManagerTaskSnapshot;
+        const next =
+          decision === 'preserve-cancel'
+            ? { ...row, ...patch, state: 'CANCELLED', result: row.result ?? null, updatedAt: nowIso() }
+            : { ...row, ...patch, updatedAt: nowIso() };
         taskStore().set(id, next as unknown as Record<string, unknown>);
         return next as unknown as ManagerTaskSnapshot;
       },

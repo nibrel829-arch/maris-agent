@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ApprovalQueue } from '@/components/cockpit/ApprovalQueue';
 import { ManagerCommand } from '@/components/cockpit/ManagerCommand';
 import { PageHeader } from '@/components/cockpit/PageHeader';
-import { RecentTasks, STATE_TONE, humanState } from '@/components/cockpit/RecentTasks';
+import { RecentTasks, displayState } from '@/components/cockpit/RecentTasks';
 import { Badge, Card, EmptyState, ErrorState, LoadingLines } from '@/components/ui/primitives';
 import {
   ArrowRightIcon,
@@ -23,9 +23,11 @@ import type {
   ManagerArtifact,
   ManagerStage,
   ManagerTaskSnapshot,
+  OutputReference,
   SkillDefinition,
   StepResult,
 } from '@/types/manager';
+import type { CapabilityRecord } from '@/server/manager/capability-registry';
 
 interface ApiEnvelope<T> {
   ok: boolean;
@@ -54,6 +56,7 @@ const STEP_TONE: Record<StepResult['status'], 'info' | 'success' | 'warning' | '
   failed: 'danger',
   skipped: 'neutral',
   denied: 'danger',
+  blocked: 'warning',
 };
 
 function titleCase(value: string): string {
@@ -71,6 +74,7 @@ function stepStatusLabel(status: StepResult['status']) {
     failed: 'Needs attention',
     skipped: 'Needs input',
     denied: 'Stopped',
+    blocked: 'Blocked',
   };
   return labels[status];
 }
@@ -111,6 +115,16 @@ function displayFields(content: unknown): Array<{ label: string; value: string }
     })
     .filter((field) => field.value.length > 0)
     .slice(0, 5);
+}
+
+function SavedReference({ reference }: { reference: OutputReference }) {
+  const label = `${reference.label}`;
+  if (!reference.href) return <span className="text-sm text-slate-300">{label}</span>;
+  return (
+    <Link className="text-sm font-medium text-brand-200 hover:text-brand-100" href={reference.href}>
+      {label}
+    </Link>
+  );
 }
 
 function ArtifactCard({ artifact }: { artifact: ManagerArtifact }) {
@@ -314,13 +328,17 @@ function Assurance({ task }: { task: ManagerTaskSnapshot }) {
   );
 }
 
+const TERMINAL = new Set(['COMPLETED', 'FAILED', 'CANCELLED', 'WAITING_APPROVAL']);
+
 export function ManagerWorkspace({
   skills,
+  capabilities,
   canDecide,
   initialTaskId = null,
   initialRequest = '',
 }: {
   skills: SkillDefinition[];
+  capabilities: CapabilityRecord[];
   canDecide: boolean;
   initialTaskId?: string | null;
   initialRequest?: string;
@@ -394,6 +412,40 @@ export function ManagerWorkspace({
     [loadApprovals, router],
   );
 
+  const refreshQuietly = useCallback(async (taskId: string) => {
+    try {
+      const response = await fetch(`/api/manager/tasks/${taskId}`);
+      const payload = (await response.json()) as ApiEnvelope<ManagerTaskSnapshot>;
+      if (response.ok && payload.ok && payload.data) {
+        setTask(payload.data);
+        await loadApprovals(payload.data.id);
+      }
+    } catch {
+      // Polling is best-effort. The last persisted snapshot stays on screen.
+    }
+  }, [loadApprovals]);
+
+  useEffect(() => {
+    if (!task || TERMINAL.has(task.state)) return;
+    const timer = window.setInterval(() => {
+      void refreshQuietly(task.id);
+    }, 1500);
+    return () => window.clearInterval(timer);
+  }, [refreshQuietly, task]);
+
+  const controlTask = useCallback(async (action: 'cancel' | 'retry') => {
+    if (!task) return;
+    setLoadError(null);
+    const response = await fetch(`/api/manager/tasks/${task.id}/${action}`, { method: 'POST' });
+    const payload = (await response.json()) as ApiEnvelope<ManagerTaskSnapshot>;
+    if (!response.ok || !payload.ok || !payload.data) {
+      setLoadError(payload.error?.message ?? `Could not ${action} this task.`);
+      return;
+    }
+    setTask(payload.data);
+    await loadRecent();
+  }, [loadRecent, task]);
+
   const refreshSelectedTask = useCallback(async () => {
     if (task?.id) {
       await loadTask(task.id);
@@ -440,7 +492,13 @@ export function ManagerWorkspace({
                 </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <Badge tone={STATE_TONE[task.state] ?? 'neutral'}>{humanState(task.state)}</Badge>
+                <Badge tone={displayState(task).tone}>{displayState(task).label}</Badge>
+                {task.state === 'EXECUTING' || task.state === 'PLANNING' || task.state === 'RECEIVED' || task.state === 'VERIFYING' ? (
+                  <button className="btn-secondary" onClick={() => void controlTask('cancel')} type="button">Cancel</button>
+                ) : null}
+                {task.result?.completion === 'partial' || task.state === 'FAILED' ? (
+                  <button className="btn-secondary" onClick={() => void controlTask('retry')} type="button">Retry blocked steps</button>
+                ) : null}
                 {task.result?.aiEnabled === false ? <Badge>Structured planning</Badge> : null}
                 <span className="inline-flex items-center gap-1 text-[11px] text-slate-500"><ClockIcon size={13} /> Updated {new Date(task.updatedAt).toLocaleString()}</span>
               </div>
@@ -454,6 +512,18 @@ export function ManagerWorkspace({
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.42fr)_minmax(330px,0.78fr)]">
             <div className="space-y-6">
+              {task.result?.references?.length ? (
+                <Card title="Saved records" action={<Badge tone="info">{task.result.references.length}</Badge>}>
+                  <ul className="space-y-2">
+                    {task.result.references.map((reference) => (
+                      <li key={`${reference.kind}-${reference.id}`}>
+                        <SavedReference reference={reference} />
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              ) : null}
+
               <Card title="Execution">
                 <ExecutionBoard task={task} />
               </Card>
@@ -561,6 +631,19 @@ export function ManagerWorkspace({
         </>
       ) : !loadingTask ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(330px,0.75fr)]">
+          <Card title="Capabilities">
+            <div className="flex flex-wrap gap-2">
+              {capabilities.map((capability) => (
+                <Badge
+                  key={capability.id}
+                  tone={capability.status === 'available' ? 'success' : capability.status === 'needs_configuration' ? 'warning' : capability.status === 'assisted' ? 'info' : 'danger'}
+                >
+                  {capability.name}: {capability.status.replace(/_/g, ' ')}
+                </Badge>
+              ))}
+            </div>
+            <p className="mt-3 text-xs leading-5 text-slate-500">A missing provider blocks that step. The Manager does not invent the missing output.</p>
+          </Card>
           <Card title="How your Manager works">
             <p className="max-w-2xl text-sm leading-6 text-slate-400">You set the direction. The Manager makes the work legible, uses only the capabilities that fit, verifies what happened and pauses for you before any protected action.</p>
             <div className="mt-5"><ProcessFlow /></div>

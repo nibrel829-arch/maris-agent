@@ -9,6 +9,10 @@ description: >-
 tools:
   - create_visual_concept
   - list_visual_concepts
+  - generate_image_asset
+  - prepare_video_draft
+  - export_video_file
+  - save_library_asset
   - log_activity
 work_types:
   - visual_communication
@@ -23,8 +27,10 @@ version: "1.0"
 # Visual Content
 
 Produces visual communication concepts: message hierarchy, formats, asset list,
-and accessibility/brand consistency notes. This skill writes a specification;
-it does not generate pixels, mock-ups or rendered media on its own.
+and accessibility/brand consistency notes. A specification is always saved
+first. Pixel generation uses `generate_image_asset` only when the native image
+provider returns bytes. Arena Agent Mode is not called. A missing key blocks
+the step; no placeholder image is saved.
 
 ## When to use
 
@@ -37,7 +43,7 @@ it does not generate pixels, mock-ups or rendered media on its own.
 
 - Writing the caption or body copy → `content-marketing`
 - Publishing or scheduling to a platform → `social-community`
-- Creating a finished image/video file (out of scope for this skill; not faked)
+- Claiming an image or video file exists when the provider did not return one
 
 ## Hard rules
 
