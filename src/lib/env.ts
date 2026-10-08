@@ -78,6 +78,12 @@ export interface ServerEnv extends PublicEnv {
   appUrl: string | null;
   /** Per-platform OAuth client credentials (server-only; null fields mean unconfigured). */
   oauthClients: Record<string, { clientId: string | null; clientSecret: string | null }>;
+  /** Email provider selection (resend). Null means unconfigured — no delivery. */
+  emailProvider: string | null;
+  /** Verified sender address for outbound email (NIBREXO_EMAIL_FROM). Null when unset. */
+  emailFrom: string | null;
+  /** Whether Resend credentials are present (truthy only when api key + from are set). */
+  emailConfigured: boolean;
 }
 
 export function publicEnv(): PublicEnv {
@@ -103,6 +109,11 @@ export function serverEnv(): ServerEnv {
   const dataBackend: DataBackend =
     configuredBackend === 'memory' && !isProduction ? 'memory' : 'supabase';
 
+  const emailProvider = optional(process.env.NIBREXO_EMAIL_PROVIDER)?.toLowerCase() ?? null;
+  const emailFrom = optional(process.env.NIBREXO_EMAIL_FROM) ?? null;
+  const resendKey = optional(process.env.RESEND_API_KEY) ?? null;
+  const emailConfigured = emailProvider === 'resend' && Boolean(resendKey && emailFrom);
+
   return {
     ...pub,
     supabaseServiceRoleKey: serviceKey.value,
@@ -121,6 +132,9 @@ export function serverEnv(): ServerEnv {
     // is the self-hosted alias.
     cronSecret: optional(process.env.CRON_SECRET) ?? optional(process.env.NIBREXO_CRON_SECRET) ?? null,
     appUrl: optional(process.env.NIBREXO_APP_URL) ?? null,
+    emailProvider,
+    emailFrom,
+    emailConfigured,
     oauthClients: {
       // TikTok names its id `client_key`; the env var mirrors the provider.
       tiktok: {

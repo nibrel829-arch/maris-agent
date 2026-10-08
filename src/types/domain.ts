@@ -357,6 +357,8 @@ export type EmailStatus =
   | 'FAILED'
   | 'CANCELLED';
 
+export type EmailTemplateStatus = 'draft' | 'active' | 'archived';
+
 export interface EmailTemplate {
   id: UUID;
   organization_id: UUID;
@@ -366,6 +368,8 @@ export interface EmailTemplate {
   body: string;
   variables: string[];
   archived: boolean;
+  /** Lifecycle for Phase 10: draft templates are not selectable for sending. Defaults to active in DB. */
+  status?: EmailTemplateStatus;
   created_at: ISODateTime;
   updated_at: ISODateTime;
 }
@@ -380,6 +384,12 @@ export interface EmailLog {
   body: string;
   status: EmailStatus;
   provider_message_id: string | null;
+  /** Provider name that delivered this row (e.g. resend) — null when unsent. */
+  provider?: string | null;
+  /** Idempotency guard for retry-safe sends (24h Resend window + local dedup). */
+  idempotency_key?: string | null;
+  /** Frozen template snapshot at send time (subject/body/variables). */
+  template_snapshot?: Record<string, unknown> | null;
   error_message: string | null;
   created_by: UUID | null;
   created_at: ISODateTime;
@@ -471,8 +481,12 @@ export type ActivityAction =
   | 'inbox.reply.sent'
   | 'inbox.sync.completed'
   | 'inbox.sync.failed'
+  | 'email.template.created'
+  | 'email.template.updated'
+  | 'email.template.deleted'
   | 'email.prepared'
   | 'email.sent'
+  | 'email.failed'
   | 'report.generated'
   | 'research.brief_created'
   | 'quality.check_run'
