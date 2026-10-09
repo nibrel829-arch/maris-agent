@@ -12,9 +12,12 @@ Commercial use is permitted with use-based restrictions. This is not Apache-2.0.
 The model card says the weights are not fit for product use without a safety
 review. Nibrexo does not add a paid safety API.
 
-Hardware: about 4 GB of weights on disk and 8 GB RAM for CPU inference.
-A paid GPU is not required. Vercel cannot run this process.
-If weights or RAM are missing, the process reports that and writes no image.
+Hardware for this worker: about 4 GB of weights and 8 GB RAM for CPU inference.
+A lighter published path is stable-diffusion.cpp with SD 1.5 q4_0: about 2.0 GB
+working set at 512x512, or about 1.5 GB with flash attention
+(https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/quantization_and_gguf.md).
+That path was not executed here. A paid GPU is not required. Vercel cannot run
+this process. If weights or RAM are missing, the process writes no image.
 """
 
 from __future__ import annotations
@@ -98,6 +101,8 @@ def readiness() -> dict[str, Any]:
         f"Nibrexo image engine can load {MODEL_ID} from {path}. "
         "No external image API will be called."
     )
+    if not can:
+        message = f"{message} {next_action(memory)}".strip()
     return {
         "engine": ENGINE,
         "model": MODEL_ID,
@@ -106,8 +111,54 @@ def readiness() -> dict[str, Any]:
         "canGenerate": can,
         "missing": missing,
         "ramBytes": memory,
+        "diskFreeBytes": disk_free_bytes(),
+        "inferenceTested": False,
+        "practicalOption": practical_option(memory),
         "message": message,
     }
+
+
+def disk_free_bytes() -> int:
+    try:
+        return int(os.statvfs(".").f_bavail * os.statvfs(".").f_frsize)
+    except (AttributeError, OSError):
+        return 0
+
+
+def practical_option(memory: int) -> dict[str, Any]:
+    return {
+        "name": "Stable Diffusion 1.5 on a computer you own",
+        "worker": "scripts/nibrexo-image-engine.py",
+        "lighterRuntime": "leejet/stable-diffusion.cpp q4_0",
+        "license": LICENSE,
+        "licenseUrl": "https://github.com/CompVis/stable-diffusion/blob/main/LICENSE",
+        "publishedRam": (
+            "stable-diffusion.cpp documents about 2.0 GB for SD 1.x q4_0 at 512x512, "
+            "or about 1.5 GB with flash attention. "
+            "https://github.com/leejet/stable-diffusion.cpp/blob/master/docs/quantization_and_gguf.md"
+        ),
+        "fullCheckpointBytes": 4265146304,
+        "recommendedRamGb": MIN_RAM_BYTES // (1024 ** 3),
+        "recommendedDiskGb": 6,
+        "thisMachineCanRun": bool(memory >= MIN_RAM_BYTES and weights_ready(weights_dir())),
+        "notSelected": "FLUX.2 [klein] 4B is Apache-2.0 but needs about 13 GB VRAM. It is not the default and its hosted API is not called.",
+    }
+
+
+def next_action(memory: int) -> str:
+    gib = f"{memory / (1024 ** 3):.1f}" if memory else "unknown"
+    return (
+        "Next action: on a computer you own, not Vercel and not this sandbox, "
+        f"use at least {MIN_RAM_BYTES // (1024 ** 3)} GB RAM and 6 GB free disk. "
+        "pip install torch diffusers transformers accelerate safetensors pillow huggingface_hub. "
+        "python3 scripts/nibrexo-image-engine.py fetch-weights --dest .nibrexo-image/weights. "
+        "Set NIBREXO_IMAGE_WEIGHTS_DIR to that folder, rerun doctor, and start serve only if canGenerate is true. "
+        "Then set NIBREXO_IMAGE_ENGINE_URL=http://127.0.0.1:8788 on the Next.js machine. "
+        "If the worker is not on loopback, set the same locally generated NIBREXO_IMAGE_ENGINE_TOKEN on both sides. "
+        "A lighter published option is stable-diffusion.cpp with SD 1.5 q4_0 "
+        "(about 2.0 GB working set at 512x512, or about 1.5 GB with flash attention). "
+        f"This process has {gib} GB RAM and will not download the 4.27 GB checkpoint or invent an image."
+    )
 
 
 def doctor() -> int:
@@ -418,7 +469,7 @@ def generate_once(prompt: str, out_path: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Nibrexo local image engine")
-    parser.add_argument("command", choices=["doctor", "serve", "fetch-weights", "generate"])
+    parser.add_argument("command", choices=["doctor", "setup", "serve", "fetch-weights", "generate"])
     parser.add_argument("--host", default=os.environ.get("NIBREXO_IMAGE_ENGINE_HOST", "127.0.0.1"))
     parser.add_argument("--port", type=int, default=int(os.environ.get("NIBREXO_IMAGE_ENGINE_PORT", "8788")))
     parser.add_argument("--dest", default=os.environ.get("NIBREXO_IMAGE_WEIGHTS_DIR", ".nibrexo-image/weights"))
@@ -427,6 +478,9 @@ def main() -> int:
     args = parser.parse_args()
     if args.command == "doctor":
         return doctor()
+    if args.command == "setup":
+        print(next_action(ram_bytes()))
+        return 2 if not readiness()["canGenerate"] else 0
     if args.command == "fetch-weights":
         return fetch_weights(args.dest)
     if args.command == "generate":

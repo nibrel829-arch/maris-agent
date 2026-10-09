@@ -9,12 +9,22 @@ describe('nibrexo image engine doctor', () => {
       env: { ...process.env, NIBREXO_IMAGE_WEIGHTS_DIR: '' },
     });
     expect(result.status).toBe(2);
-    const report = JSON.parse(result.stdout) as { canGenerate: boolean; engine: string; missing: string[]; message: string };
+    const report = JSON.parse(result.stdout) as {
+      canGenerate: boolean;
+      engine: string;
+      missing: string[];
+      message: string;
+      inferenceTested: boolean;
+      practicalOption: { thisMachineCanRun: boolean; license: string };
+    };
     expect(report.engine).toBe('nibrexo-image-engine');
     expect(report.canGenerate).toBe(false);
     expect(report.missing).toContain('NIBREXO_IMAGE_WEIGHTS_DIR');
     expect(report.message).toMatch(/NIBREXO_IMAGE_WEIGHTS_DIR/);
     expect(report.message.toLowerCase()).not.toContain('api.openai.com');
+    expect(report.inferenceTested).toBe(false);
+    expect(report.practicalOption.thisMachineCanRun).toBe(false);
+    expect(report.practicalOption.license).toBe('CreativeML Open RAIL-M');
   });
 
   it('does not write an image file when generation is impossible', () => {

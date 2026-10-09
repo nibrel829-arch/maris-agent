@@ -78,7 +78,7 @@ export function nativeImageSetupMessage(): string {
     'This is a local worker, not an external image API. On a machine you control, run: python3 scripts/nibrexo-image-engine.py doctor && python3 scripts/nibrexo-image-engine.py serve',
     `Then set NIBREXO_IMAGE_ENGINE_URL=http://127.0.0.1:8788. Loopback does not need a vendor API key. A non-loopback worker also needs NIBREXO_IMAGE_ENGINE_TOKEN, which you generate locally; it is not an OpenAI, Cloudflare, or Pollinations key.`,
     `Model: Stable Diffusion v1.5 (${NIBREXO_IMAGE_MODEL_ID}). License: ${NIBREXO_IMAGE_LICENSE} (https://github.com/CompVis/stable-diffusion/blob/main/LICENSE). Commercial use is permitted with use-based restrictions. It is not Apache-2.0. The model card says the weights are not fit for product use without a safety review.`,
-    `Disk: about ${NIBREXO_IMAGE_WEIGHTS_GB} GB in NIBREXO_IMAGE_WEIGHTS_DIR (a local diffusers folder). RAM: ${NIBREXO_IMAGE_MIN_RAM_GB} GB minimum for CPU inference. A paid GPU is not required and is not called.`,
+    `Disk: about ${NIBREXO_IMAGE_WEIGHTS_GB} GB in NIBREXO_IMAGE_WEIGHTS_DIR. RAM: ${NIBREXO_IMAGE_MIN_RAM_GB} GB for this worker. A paid GPU is not required and is not called. The published lighter path is stable-diffusion.cpp SD 1.5 q4_0, about 2.0 GB at 512x512 or 1.5 GB with flash attention. It was not run here because the weights could not be downloaded and this machine has under 4 GB RAM.`,
     'Vercel cannot run this model (memory, time, and no persistent weights). Do not point the URL at OpenAI, Cloudflare, Pollinations, Arena, Hugging Face Inference, or api.bfl.ai.',
     'A stored CLOUDFLARE_API_TOKEN or OPENAI_API_KEY is ignored. A token alone does not enable image generation.',
   ].join(' ');
