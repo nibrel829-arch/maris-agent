@@ -21,6 +21,8 @@ import type {
   ContentItem,
   EmailLog,
   EmailTemplate,
+  EmailBrandProfileRecord,
+  EmailDesign,
   Lead,
   ProductConcept,
   PublishJob,
@@ -148,6 +150,10 @@ export interface NibrexoRepository {
   emailTemplates: Collection<EmailTemplate>;
   emailLogs: Collection<EmailLog>;
   emailSequences: Collection<EmailSequence>;
+  /** Phase 16 — visual email designs saved by the studio or the Manager. */
+  emailDesigns: Collection<EmailDesign>;
+  /** Phase 16 — one organization-level brand + design-system profile. */
+  emailBrandProfiles: Collection<EmailBrandProfileRecord>;
   socialAccounts: Collection<SocialAccount>;
   socialCredentials: Collection<SocialCredential>;
   socialOauthStates: Collection<SocialOAuthState>;

@@ -397,6 +397,37 @@ export interface EmailLog {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Email Studio designs (Phase 16)                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The visual design document, the brand profile and the rendered artefact all
+ * live in `src/types/email-design.ts`. They are re-exported here so the
+ * repository interface and the existing email services can reference them
+ * without importing the studio module directly.
+ */
+export type {
+  EmailBlock,
+  EmailBlockProps,
+  EmailBlockType,
+  EmailBrandProfile,
+  EmailBrandProfileRecord,
+  EmailDesign,
+  EmailDesignDocument,
+  EmailDesignSettings,
+  EmailDesignSource,
+  EmailDesignStatus,
+  EmailImage,
+  EmailProductCard,
+  EmailSavedSection,
+  EmailSocialLink,
+  EmailSocialPlatform,
+  EmailValidationIssue,
+  EmailValidationReport,
+  RenderedEmail,
+} from './email-design';
+
+/* -------------------------------------------------------------------------- */
 /* AI / Manager persistence (PDF #05 §8, PDF #08)                              */
 /* -------------------------------------------------------------------------- */
 
@@ -487,6 +518,16 @@ export type ActivityAction =
   | 'email.prepared'
   | 'email.sent'
   | 'email.failed'
+  | 'email.design.created'
+  | 'email.design.updated'
+  | 'email.design.deleted'
+  | 'email.design.duplicated'
+  | 'email.design.promoted'
+  | 'email.design.test_sent'
+  | 'email.design.test_failed'
+  | 'email.brand.updated'
+  | 'email.brand.section_saved'
+  | 'email.brand.section_deleted'
   | 'report.generated'
   | 'research.brief_created'
   | 'quality.check_run'

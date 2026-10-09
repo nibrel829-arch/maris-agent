@@ -21,6 +21,7 @@ describe('Supabase migration contract', () => {
       '0009_publish_jobs.sql',
       '0010_unified_inbox.sql',
       '0011_email_templates_sending.sql',
+      '0012_email_design_studio.sql',
     ]);
   });
 
@@ -133,6 +134,29 @@ describe('Supabase migration contract', () => {
     expect(social).toContain('social_oauth_states_tenant_update');
     expect(social).toContain('social_oauth_states_admin_delete');
     expect(social).toContain('social_oauth_states_tenant_identity_immutable');
+  });
+
+  it('adds the Phase 16 email design studio tables with tenant RLS', () => {
+    const studio = migration('0012_email_design_studio.sql');
+    expect(studio).toContain('create table if not exists public.email_designs');
+    expect(studio).toContain('create table if not exists public.email_brand_profiles');
+    expect(studio).toContain('organization_id uuid not null unique');
+    expect(studio).toContain('references public.email_templates (id)');
+    for (const policy of [
+      'email_designs_tenant_select',
+      'email_designs_tenant_insert',
+      'email_designs_tenant_update',
+      'email_designs_admin_delete',
+      'email_brand_profiles_tenant_select',
+      'email_brand_profiles_tenant_insert',
+      'email_brand_profiles_tenant_update',
+      'email_brand_profiles_admin_delete',
+    ]) {
+      expect(studio).toContain(`drop policy if exists ${policy} on`);
+    }
+    expect(studio).toContain('email_designs_tenant_identity_immutable');
+    expect(studio).toContain('email_brand_profiles_tenant_identity_immutable');
+    expect(studio).toContain('enable row level security');
   });
 
   it('never deletes data in any migration', () => {

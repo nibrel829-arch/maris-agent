@@ -67,7 +67,8 @@ const NAVIGATION: NavGroup[] = [
     label: 'Operations',
     items: [
       { href: '/clients', label: 'Clients', module: 'clients', icon: UserGroupIcon },
-      { href: '/email', label: 'Email', module: 'email', icon: DocumentIcon },
+      { href: '/email', label: 'Email templates', module: 'email', icon: DocumentIcon },
+      { href: '/email/studio', label: 'Design studio', module: 'email', icon: LayersIcon },
       { href: '/social', label: 'Channels', module: 'social', icon: PulseIcon },
       { href: '/inbox', label: 'Inbox', module: 'inbox', icon: InboxIcon },
     ],
@@ -102,7 +103,15 @@ export function Sidebar({ role }: { role: OrgRole }) {
 
   const isActive = (href: string) => {
     if (href === '/manager') return pathname === '/manager' || pathname === '/ai';
-    if (href === '/email') return pathname === '/email' || pathname.startsWith('/email/') || pathname === '/emails' || pathname.startsWith('/emails/');
+    if (href === '/email/studio') return pathname.startsWith('/email/studio') || pathname.startsWith('/email/brand');
+    if (href === '/email') {
+      return (
+        pathname === '/email' ||
+        pathname.startsWith('/email/templates') ||
+        pathname === '/emails' ||
+        pathname.startsWith('/emails/')
+      );
+    }
     return pathname === href || pathname.startsWith(`${href}/`);
   };
 

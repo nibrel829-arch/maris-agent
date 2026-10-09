@@ -1,10 +1,10 @@
 {
   "id": "visual-content",
   "name": "Visual Content",
-  "description": "Produces visual communication concepts: message hierarchy, formats, asset list, accessibility and brand consistency checks. Prepares specifications; it does not claim external rendering that was not performed.",
+  "description": "Produces visual communication concepts: message hierarchy, formats, asset list, accessibility and brand consistency checks, and inspects rendered email designs from the studio. Prepares specifications; it does not claim external rendering that was not performed.",
   "workTypes": ["visual_communication", "content", "marketing"],
-  "modules": ["content", "ai"],
-  "tools": ["create_visual_concept", "list_visual_concepts", "log_activity"],
+  "modules": ["content", "email", "ai"],
+  "tools": ["create_visual_concept", "list_visual_concepts", "log_activity", "list_email_design_starters", "render_email_design", "list_email_designs"],
   "knowledge": ["brand-voice.json"],
   "outputs": ["visual_concept"],
   "maxRisk": "low",

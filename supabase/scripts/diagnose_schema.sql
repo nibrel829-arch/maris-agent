@@ -32,7 +32,7 @@
 --
 -- NEXT ACTION (see docs/SUPABASE_VERIFICATION.md)
 --   Apply `supabase/migrations/0001_core_identity.sql` through
---   `0007_content_storage.sql` in order — via `supabase db push` (CLI) or by
+--   `0012_email_design_studio.sql` in order — via `supabase db push` (CLI) or by
 --   pasting each file into the SQL Editor in order. They are re-runnable:
 --   every `create table`/`create index` is `if not exists`, every `create type`
 --   is guarded, and the only `drop` statements are `drop policy if exists`.
@@ -123,14 +123,23 @@ from (
   select 'table', 'public.approvals',
          to_regclass('public.approvals') is not null,
          'migrations/0003_manager_agent.sql'
+  union all
+  select 'table', 'public.email_designs',
+         to_regclass('public.email_designs') is not null,
+         'migrations/0012_email_design_studio.sql'
+  union all
+  select 'table', 'public.email_brand_profiles',
+         to_regclass('public.email_brand_profiles') is not null,
+         'migrations/0012_email_design_studio.sql'
 ) as required
 order by (required.present) asc, required.object_kind, required.object_name;
 
 -- --------------------------------------------------------------------------
--- Grid 2 — overview counts. A fully applied 0001-0008 set creates 35 tables
+-- Grid 2 — overview counts. A fully applied 0001-0012 set creates 37 tables
 -- and 14 enums in `public` (0001: 2, 0002: 7, 0003: 5; 0006 adds enum values
 -- and a column, not tables or types; 0007 only touches the storage schema;
--- 0008 adds one table and columns, no types).
+-- 0008 adds one table and columns, no types; 0009/0010/0011/0012 add tables
+-- and columns, no types).
 -- --------------------------------------------------------------------------
 select
   (select count(*)

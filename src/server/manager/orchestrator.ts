@@ -106,6 +106,7 @@ const ENTITY_LABELS: Record<string, string> = {
   emailLog: 'Email draft',
   template: 'Email template',
   sequence: 'Email sequence',
+  design: 'Email design',
   lead: 'Lead',
   client: 'Client',
   report: 'Report',
