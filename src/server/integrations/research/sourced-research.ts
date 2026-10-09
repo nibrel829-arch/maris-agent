@@ -110,7 +110,7 @@ export async function conductSourcedResearch(input: {
       sources: [],
       findings: [],
       model: null,
-      note: 'Brave Search returned no web results for this question. No findings were added.',
+      note: searched.note ?? 'No free source returned a usable URL. No findings were added and no paid search was assumed.',
     };
   }
 
@@ -147,7 +147,7 @@ export async function conductSourcedResearch(input: {
       model: synthesis.model,
       note:
         phrased.length > 0
-          ? `Findings were limited to retrieved Brave Search sources and phrased by DeepSeek (${synthesis.model}). Unsourced model claims were dropped.`
+          ? `Findings were limited to retrieved source URLs and phrased by DeepSeek (${synthesis.model}) because paid synthesis was explicitly allowed. Unsourced model claims were dropped.`
           : `DeepSeek did not return snippet-backed claims. The retrieved snippets were stored as EVIDENCE instead. Model: ${synthesis.model}.`,
     };
   }
@@ -159,7 +159,7 @@ export async function conductSourcedResearch(input: {
     model: null,
     note:
       synthesis.status === 'needs_configuration'
-        ? 'Sources were retrieved from Brave Search and stored as EVIDENCE. DeepSeek is not configured, so no model synthesis was applied.'
+        ? `${searched.note ?? 'Sources were retrieved.'} Snippets were stored as EVIDENCE. DeepSeek was not called.`
         : `Sources were stored as EVIDENCE. DeepSeek synthesis was not used: ${synthesis.message}`,
   };
 }

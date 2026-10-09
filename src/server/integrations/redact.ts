@@ -12,7 +12,13 @@ export function redactSecrets(value: string): string {
     .replace(/X-Subscription-Token:\s*\S+/gi, 'X-Subscription-Token: [redacted]');
 
   const env = serverEnv();
-  for (const secret of [env.openAiApiKey, env.deepseekApiKey, env.braveSearchApiKey, env.supabaseServiceRoleKey]) {
+  for (const secret of [
+    env.openAiApiKey,
+    env.deepseekApiKey,
+    env.braveSearchApiKey,
+    env.cloudflareApiToken,
+    env.supabaseServiceRoleKey,
+  ]) {
     if (secret && secret.length >= 6) out = out.split(secret).join('[redacted]');
   }
   return out;

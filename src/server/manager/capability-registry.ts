@@ -56,32 +56,55 @@ const SPECS: readonly CapabilitySpec[] = [
       'POST https://api.deepseek.com/chat/completions with Bearer DEEPSEEK_API_KEY. Models deepseek-flash and deepseek-v4-pro. Verified 2026-10-08 against https://api-docs.deepseek.com/.',
     resolve: (configured) =>
       configured.has('DEEPSEEK_API_KEY')
-        ? { status: 'available', statusDetail: 'DeepSeek chat completions can run on the server.' }
-        : {
-            status: 'needs_configuration',
-            statusDetail: 'Set DEEPSEEK_API_KEY. Without it, retrieved snippets are stored as-is and no model synthesis is claimed.',
-          },
-  },
-  {
-    id: 'research.web',
-    name: 'Source-backed web research — Brave Search',
-    implementation: 'src/server/integrations/research/web-search.ts',
-    toolNames: ['conduct_sourced_research'],
-    requiredConfig: ['BRAVE_SEARCH_API_KEY'],
-    operations: ['web.search'],
-    limitations: [
-      'Returns titles, URLs and snippets. A snippet is EVIDENCE, not a fully read page.',
-      'If the key is missing, the research step is blocked. No sources are invented.',
-    ],
-    evidence:
-      'GET https://api.search.brave.com/res/v1/web/search with header X-Subscription-Token. Verified 2026-10-08 against https://api-dashboard.search.brave.com/app/documentation/web-search/get-started.',
-    resolve: (configured) =>
-      configured.has('BRAVE_SEARCH_API_KEY')
-        ? { status: 'available', statusDetail: 'Brave Search can retrieve source URLs for the current question.' }
+        ? {
+            status: 'available',
+            statusDetail: 'Paid synthesis is explicitly allowed. DeepSeek still does not retrieve sources.',
+          }
         : {
             status: 'needs_configuration',
             statusDetail:
-              'Set BRAVE_SEARCH_API_KEY. This is the supported source-backed search adapter. DeepSeek will not be used to invent current facts.',
+              'Disabled by default so a stored key cannot create token charges. Free research stores Wikipedia and Instant Answer snippets without a model.',
+          },
+  },
+  {
+    id: 'research.free',
+    name: 'Free source retrieval — Wikipedia and Instant Answers',
+    implementation: 'src/server/integrations/research/free-search.ts',
+    toolNames: ['conduct_sourced_research'],
+    requiredConfig: [],
+    operations: ['wikipedia.search', 'duckduckgo.instant_answer'],
+    limitations: [
+      'Wikipedia is an encyclopedia, not a general web index.',
+      'DuckDuckGo Instant Answer returns an abstract URL only. It is not a search-results API.',
+      'A snippet is EVIDENCE, not a fully read page. No sources are invented when these lookups are empty or unreachable.',
+    ],
+    evidence:
+      'GET https://en.wikipedia.org/w/api.php?action=query&generator=search (https://www.mediawiki.org/wiki/API:Search). GET https://api.duckduckgo.com/?format=json is the official Instant Answer API, not a web index.',
+    resolve: () => ({
+      status: 'available',
+      statusDetail: 'No key and no billing. Results are limited to those two official endpoints.',
+    }),
+  },
+  {
+    id: 'research.web',
+    name: 'Paid web search — Brave Search',
+    implementation: 'src/server/integrations/research/web-search.ts',
+    toolNames: ['conduct_sourced_research'],
+    requiredConfig: ['NIBREXO_ALLOW_PAID_SEARCH', 'BRAVE_SEARCH_API_KEY'],
+    operations: ['web.search'],
+    limitations: [
+      'Metered API. A key alone does not authorize a call.',
+      'Disabled unless NIBREXO_ALLOW_PAID_SEARCH=1, because usage can be billed after the included credit.',
+    ],
+    evidence:
+      'GET https://api.search.brave.com/res/v1/web/search with header X-Subscription-Token. The free tier was removed; accounts receive monthly credits and can be billed. Checked 2026-10-09.',
+    resolve: (configured) =>
+      configured.has('BRAVE_SEARCH_API_KEY')
+        ? { status: 'available', statusDetail: 'Paid Brave Search is explicitly allowed. It can incur charges.' }
+        : {
+            status: 'needs_configuration',
+            statusDetail:
+              'Not used. Free research uses Wikipedia and DuckDuckGo Instant Answers. Enable Brave only if you accept billing.',
           },
   },
   {
@@ -99,24 +122,50 @@ const SPECS: readonly CapabilitySpec[] = [
     resolve: () => ({ status: 'unsupported', statusDetail: ARENA_IMAGE_UNSUPPORTED.message }),
   },
   {
-    id: 'image.native',
+    id: 'image.openai',
     name: 'Image generation — OpenAI Images',
-    implementation: 'src/server/integrations/media/image-generation.ts',
-    toolNames: ['generate_image_asset'],
-    requiredConfig: ['OPENAI_API_KEY'],
-    operations: ['images.generations'],
+    implementation: 'not called',
+    toolNames: [],
+    requiredConfig: [],
+    operations: [],
     limitations: [
-      'Uses the OpenAI Images API already compatible with this stack. It does not publish the image.',
-      'The key stays on the server. A missing key blocks the step; no placeholder image is saved.',
+      'Paid API. Removed from the required path so OPENAI_API_KEY cannot generate images by itself.',
+      'There is no automatic fallback to this API.',
     ],
     evidence:
-      'POST https://api.openai.com/v1/images/generations. Default model gpt-image-1.5, override NIBREXO_IMAGE_MODEL. Docs: https://developers.openai.com/api/reference/resources/images/methods/generate.',
+      'POST https://api.openai.com/v1/images/generations bills per image. Checked 2026-10-09. The Manager does not call it.',
+    resolve: () => ({
+      status: 'unsupported',
+      statusDetail: 'OpenAI Images is paid and is not invoked.',
+    }),
+  },
+  {
+    id: 'image.generate',
+    name: 'Image generation — Nibrexo engine',
+    implementation: 'src/server/media/engine/native-engine.ts',
+    toolNames: ['image.generate', 'generate_image_asset'],
+    requiredConfig: ['NIBREXO_IMAGE_ENGINE_URL', 'NIBREXO_IMAGE_WEIGHTS_DIR'],
+    operations: ['image.generate'],
+    limitations: [
+      'A file is saved only after PNG, JPEG or WebP bytes are verified and read back from storage.',
+      'The engine is scripts/nibrexo-image-engine.py. It loads Stable Diffusion v1.5 locally. It does not call an image API.',
+      'CPU inference needs about 8 GB RAM and 4 GB of weights. Vercel cannot run the model.',
+      'A stored CLOUDFLARE_API_TOKEN or OPENAI_API_KEY is ignored. A token alone does not enable a call.',
+      'CreativeML Open RAIL-M permits commercial use with use-based restrictions. It is not Apache-2.0.',
+    ],
+    evidence:
+      'Model card https://huggingface.co/stable-diffusion-v1-5/stable-diffusion-v1-5. License https://github.com/CompVis/stable-diffusion/blob/main/LICENSE. FLUX.2 [klein] 4B is Apache-2.0 but needs about 13 GB VRAM, so it is not the default and its hosted API is not called.',
     resolve: (configured) =>
-      configured.has('OPENAI_API_KEY')
-        ? { status: 'available', statusDetail: 'Native image generation can save a PNG into the Content Library.' }
+      configured.has('NIBREXO_IMAGE_ENGINE_URL')
+        ? {
+            status: 'available',
+            statusDetail:
+              'The Manager will call only the Nibrexo image engine. A health check must identify nibrexo-image-engine before any file is saved. External image APIs are not called.',
+          }
         : {
             status: 'needs_configuration',
-            statusDetail: 'Set OPENAI_API_KEY. Arena Agent Mode is unsupported, so there is no other image path.',
+            statusDetail:
+              'Start scripts/nibrexo-image-engine.py and set NIBREXO_IMAGE_ENGINE_URL. A CLOUDFLARE_API_TOKEN or OPENAI_API_KEY is ignored. A token alone does not enable image generation. No image file is invented while the engine is unset.',
           },
   },
   {
@@ -172,7 +221,8 @@ function configuredNames(): Set<string> {
   const names = new Set<string>();
   if (env.deepseekConfigured) names.add('DEEPSEEK_API_KEY');
   if (env.webSearchConfigured) names.add('BRAVE_SEARCH_API_KEY');
-  if (env.imageGenerationConfigured) names.add('OPENAI_API_KEY');
+  if (env.imageEngineUrl) names.add('NIBREXO_IMAGE_ENGINE_URL');
+  if (env.imageWeightsDir) names.add('NIBREXO_IMAGE_WEIGHTS_DIR');
   if (env.emailConfigured) names.add('RESEND_API_KEY');
   return names;
 }
@@ -214,6 +264,18 @@ export function interpretToolOutput(output: unknown): { blocked: boolean; issue:
       ? record.message
       : 'This capability did not run.';
 
+  if (status === 'quota_exhausted') {
+    return {
+      blocked: true,
+      issue: {
+        code: 'QUOTA_EXHAUSTED',
+        message,
+        severity: 'warning',
+        retryable: true,
+        errorClass: 'rate_limit',
+      },
+    };
+  }
   if (status === 'needs_configuration' || status === 'blocked') {
     if (executed) return { blocked: false, issue: null };
     return {

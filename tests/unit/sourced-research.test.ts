@@ -9,15 +9,29 @@ afterEach(() => {
 });
 
 describe('sourced research', () => {
-  it('blocks when web search is not configured and does not invent sources', async () => {
-    vi.stubEnv('BRAVE_SEARCH_API_KEY', '');
-    vi.stubEnv('DEEPSEEK_API_KEY', '');
+  it('records an empty free lookup without inventing sources or calling paid APIs', async () => {
+    vi.stubEnv('BRAVE_SEARCH_API_KEY', 'brave-should-not-be-used');
+    vi.stubEnv('DEEPSEEK_API_KEY', 'sk-should-not-be-used');
+    vi.stubEnv('NIBREXO_ALLOW_PAID_SEARCH', '0');
+    vi.stubEnv('NIBREXO_ALLOW_PAID_SYNTHESIS', '0');
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    setWebSearchClientForTests({
+      async search() {
+        return {
+          status: 'ok',
+          provider: 'free',
+          sources: [],
+          note: 'No free source returned a usable URL.',
+        };
+      },
+    });
     const result = await conductSourcedResearch({ question: 'Market size for dental scheduling software' });
-    expect(result.status).toBe('needs_configuration');
-    if (result.status !== 'needs_configuration') return;
+    expect(result.status).toBe('recorded');
+    if (result.status !== 'recorded') return;
     expect(result.sources).toEqual([]);
-    expect(result.missing).toContain('BRAVE_SEARCH_API_KEY');
-    expect(result.message).toMatch(/not configured|No sources/i);
+    expect(result.findings).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('stores only retrieved URLs and drops a model claim that cites a different source', async () => {
@@ -39,6 +53,7 @@ describe('sourced research', () => {
       },
     });
     vi.stubEnv('DEEPSEEK_API_KEY', 'sk-deepseek-test-key');
+    vi.stubEnv('NIBREXO_ALLOW_PAID_SYNTHESIS', '1');
     const fetchMock = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -81,13 +96,33 @@ describe('sourced research', () => {
     expect(JSON.stringify(result)).not.toContain('sk-deepseek-test-key');
   });
 
-  it('does not call DeepSeek to invent an answer when search has no key', async () => {
+  it('does not call DeepSeek to invent an answer when paid synthesis is off', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    vi.stubEnv('BRAVE_SEARCH_API_KEY', '');
+    vi.stubEnv('BRAVE_SEARCH_API_KEY', 'brave-should-not-be-used');
     vi.stubEnv('DEEPSEEK_API_KEY', 'sk-should-not-be-used');
+    vi.stubEnv('NIBREXO_ALLOW_PAID_SYNTHESIS', '0');
+    setWebSearchClientForTests({
+      async search() {
+        return {
+          status: 'ok',
+          provider: 'free',
+          note: 'fixture',
+          sources: [
+            {
+              title: 'Clinic notes',
+              url: 'https://example.com/scheduling',
+              snippet: 'Independent clinics still book recalls by phone.',
+              provider: 'wikipedia',
+              retrievedAt: '2026-10-09T00:00:00.000Z',
+            },
+          ],
+        };
+      },
+    });
     const result = await conductSourcedResearch({ question: 'Latest competitor pricing' });
-    expect(result.status).toBe('needs_configuration');
+    expect(result.status).toBe('recorded');
     expect(fetchMock).not.toHaveBeenCalled();
+    if (result.status === 'recorded') expect(result.model).toBeNull();
   });
 });

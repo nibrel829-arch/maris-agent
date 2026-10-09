@@ -115,8 +115,16 @@ export async function executeSteps(
   let started = options.startFromStepId == null;
   let haltedOnError: ExecutionOutcome['haltedOnError'] = null;
 
+  let publishTail = Promise.resolve();
   const publish = async (): Promise<void> => {
-    if (options.onStep) await options.onStep([...results]);
+    const run = publishTail.then(async () => {
+      if (options.onStep) await options.onStep([...results]);
+    });
+    publishTail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
   };
 
   // A step produces exactly one result per run: replace any placeholder entry
@@ -303,6 +311,7 @@ export async function executeSteps(
     }
 
     // 6. Execute.
+    let lastProgressAt = 0;
     const context: ToolContext = {
       actor: env.actor,
       taskId: env.taskId,
@@ -310,7 +319,21 @@ export async function executeSteps(
       repo: env.repo,
       runId: env.runId,
       idempotencyKey: `idem_${env.taskId}:${step.id}`,
+      stepId: step.id,
       ...(env.signal ? { signal: env.signal } : {}),
+      onProgress: (update) => {
+        const now = Date.now();
+        if (now - lastProgressAt < 1200) return;
+        lastProgressAt = now;
+        upsert({
+          ...base,
+          status: 'running',
+          output: { progress: update },
+          finishedAt: null,
+          durationMs: now - startedAt,
+        });
+        void publish();
+      },
     };
 
     try {

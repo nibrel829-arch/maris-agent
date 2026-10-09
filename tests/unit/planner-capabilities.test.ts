@@ -25,7 +25,8 @@ describe('multi-capability planning', () => {
     expect(tools).toContain('conduct_sourced_research');
     expect(tools).toContain('create_product_concept');
     expect(tools).toContain('create_visual_concept');
-    expect(tools).toContain('generate_image_asset');
+    expect(tools).toContain('image.generate');
+    expect(tools).not.toContain('generate_image_asset');
     expect(tools).toContain('prepare_video_draft');
     expect(tools).toContain('export_video_file');
     expect(tools.at(-1)).toBe('run_quality_check');

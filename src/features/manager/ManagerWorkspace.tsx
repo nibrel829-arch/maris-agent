@@ -65,6 +65,12 @@ function titleCase(value: string): string {
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function progressText(output: unknown): string | null {
+  if (!output || typeof output !== 'object') return null;
+  const progress = (output as { progress?: { message?: unknown } }).progress;
+  return typeof progress?.message === 'string' ? progress.message : null;
+}
+
 function stepStatusLabel(status: StepResult['status']) {
   const labels: Record<StepResult['status'], string> = {
     pending: 'Not started',
@@ -119,11 +125,18 @@ function displayFields(content: unknown): Array<{ label: string; value: string }
 
 function SavedReference({ reference }: { reference: OutputReference }) {
   const label = `${reference.label}`;
+  const image = reference.kind === 'media_file' && reference.href?.includes('/file');
   if (!reference.href) return <span className="text-sm text-slate-300">{label}</span>;
   return (
-    <Link className="text-sm font-medium text-brand-200 hover:text-brand-100" href={reference.href}>
-      {label}
-    </Link>
+    <div className="space-y-2">
+      <Link className="text-sm font-medium text-brand-200 hover:text-brand-100" href={reference.href}>
+        {label}
+      </Link>
+      {image ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img alt={label} className="max-h-48 rounded-lg border border-surface-border object-contain" src={reference.href} />
+      ) : null}
+    </div>
   );
 }
 
@@ -270,6 +283,9 @@ function ExecutionBoard({ task }: { task: ManagerTaskSnapshot }) {
                 <Badge tone={STEP_TONE[status]}>{stepStatusLabel(status)}</Badge>
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-400">{step.rationale}</p>
+              {status === 'running' && progressText(result?.output) ? (
+                <p className="mt-2 text-xs leading-5 text-sky-200">{progressText(result?.output)}</p>
+              ) : null}
               {result?.issues[0] ? <p className="mt-2 text-xs leading-5 text-amber-200">{result.issues[0].message}</p> : null}
               {step.requiresApproval && status !== 'succeeded' ? <p className="mt-2 text-[11px] font-medium text-amber-200">This action remains protected by human approval.</p> : null}
             </div>

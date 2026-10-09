@@ -17,6 +17,7 @@ export const MANAGER_SUGGESTIONS = [
   'Turn an idea into a product concept',
   'Prepare a focused outreach plan',
   'Create a content campaign',
+  'Generate an image',
 ] as const;
 
 const SUGGESTION_REQUESTS: Record<(typeof MANAGER_SUGGESTIONS)[number], string> = {
@@ -24,6 +25,7 @@ const SUGGESTION_REQUESTS: Record<(typeof MANAGER_SUGGESTIONS)[number], string> 
   'Turn an idea into a product concept': 'Build a product: a treatment-planning template pack for clinics',
   'Prepare a focused outreach plan': 'Build a lead list of dental clinics in Manchester',
   'Create a content campaign': 'Create a content campaign for a new patient follow-up service',
+  'Generate an image': 'Generate a product image of a premium minimalist desk lamp and save it to my Content Library.',
 };
 
 export function ManagerCommand({

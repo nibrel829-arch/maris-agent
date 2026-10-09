@@ -4,7 +4,7 @@
   "description": "Produces visual communication concepts: message hierarchy, formats, asset list, accessibility and brand consistency checks. Prepares specifications; it does not claim external rendering that was not performed.",
   "workTypes": ["visual_communication", "content", "marketing"],
   "modules": ["content", "ai"],
-  "tools": ["create_visual_concept", "list_visual_concepts", "generate_image_asset", "prepare_video_draft", "export_video_file", "save_library_asset", "log_activity"],
+  "tools": ["create_visual_concept", "list_visual_concepts", "image.generate", "generate_image_asset", "prepare_video_draft", "export_video_file", "save_library_asset", "log_activity"],
   "knowledge": ["brand-voice.json"],
   "outputs": ["visual_concept"],
   "maxRisk": "low",

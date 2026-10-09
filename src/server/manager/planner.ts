@@ -508,14 +508,14 @@ function appendRequestedCapabilities(
     }
   }
 
-  if (flags.image && !steps.some((step) => step.toolName === 'generate_image_asset')) {
+  if (flags.image && !steps.some((step) => step.toolName === 'image.generate' || step.toolName === 'generate_image_asset')) {
     const visualIndex = steps.findIndex((step) => step.toolName === 'create_visual_concept');
     steps.push({
       title: 'Generate the image and save it',
       rationale:
-        'Uses the native image API when configured. Arena Agent Mode is not called. A missing key blocks the step and saves no placeholder image.',
+        'Calls image.generate on the Nibrexo image engine. A file is saved only after image bytes are verified. A missing worker, missing weights, or insufficient RAM blocks the step. OpenAI, Cloudflare, Arena and Pollinations are not called.',
       skillId: 'visual-content',
-      toolName: 'generate_image_asset',
+      toolName: 'image.generate',
       input: {
         title: topic.slice(0, 200),
         prompt: request.slice(0, 1000),

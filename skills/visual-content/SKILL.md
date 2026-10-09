@@ -9,6 +9,7 @@ description: >-
 tools:
   - create_visual_concept
   - list_visual_concepts
+  - image.generate
   - generate_image_asset
   - prepare_video_draft
   - export_video_file
@@ -28,9 +29,10 @@ version: "1.0"
 
 Produces visual communication concepts: message hierarchy, formats, asset list,
 and accessibility/brand consistency notes. A specification is always saved
-first. Pixel generation uses `generate_image_asset` only when the native image
-provider returns bytes. Arena Agent Mode is not called. A missing key blocks
-the step; no placeholder image is saved.
+first. Pixel generation uses `image.generate`, which calls the Nibrexo image
+engine. OpenAI, Cloudflare, Pollinations and Arena are not called. A missing
+worker, missing weights, or insufficient RAM blocks the step; no placeholder
+image is saved.
 
 ## When to use
 

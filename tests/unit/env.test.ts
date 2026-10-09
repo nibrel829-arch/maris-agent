@@ -43,6 +43,21 @@ describe('environment data backend boundary', () => {
     expect(publicEnv().supabasePublicKeySource).toBe('NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
   });
 
+  it('does not treat a Cloudflare token as an enabled image runtime', async () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    vi.stubEnv('NIBREXO_IMAGE_PROVIDER', 'cloudflare');
+    vi.stubEnv('NIBREXO_LOCAL_IMAGE_URL', '');
+    vi.stubEnv('NIBREXO_IMAGE_ENGINE_URL', '');
+    vi.stubEnv('CLOUDFLARE_ACCOUNT_ID', 'account-test');
+    vi.stubEnv('CLOUDFLARE_API_TOKEN', 'token-test');
+    const { serverEnv } = await import('@/lib/env');
+    expect(serverEnv().imageGenerationConfigured).toBe(false);
+
+    vi.stubEnv('NIBREXO_IMAGE_ENGINE_URL', 'http://127.0.0.1:8788');
+    expect(serverEnv().imageGenerationConfigured).toBe(true);
+    expect(serverEnv().imageEngineUrl).toBe('http://127.0.0.1:8788/');
+  });
+
   it('accepts the current server-only secret key name for privileged jobs', async () => {
     vi.stubEnv('NODE_ENV', 'test');
     vi.stubEnv('SUPABASE_SERVICE_ROLE_KEY', '');

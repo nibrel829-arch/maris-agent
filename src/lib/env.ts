@@ -36,6 +36,22 @@ function publicSupabaseKey(): { value: string | null; source: PublicKeySource } 
   return { value: null, source: null };
 }
 
+function httpUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function imageProviderFrom(value: string | undefined): 'local' | 'cloudflare' | 'auto' | 'openai' {
+  if (value === 'local' || value === 'cloudflare' || value === 'openai') return value;
+  return 'auto';
+}
+
 function serverSupabaseKey(): { value: string | null; source: ServiceKeySource } {
   const serviceRole = optional(process.env.SUPABASE_SERVICE_ROLE_KEY);
   if (serviceRole) return { value: serviceRole, source: 'SUPABASE_SERVICE_ROLE_KEY' };
@@ -84,16 +100,27 @@ export interface ServerEnv extends PublicEnv {
   emailFrom: string | null;
   /** Whether Resend credentials are present (truthy only when api key + from are set). */
   emailConfigured: boolean;
-  /** Server-only DeepSeek key. Null when unset — research synthesis stays disabled. */
+  /** Server-only DeepSeek key. Null when unset. Never used unless paid synthesis is explicitly allowed. */
   deepseekApiKey: string | null;
   deepseekModel: string;
+  /** True only when the operator opted into paid synthesis and a key is present. */
   deepseekConfigured: boolean;
-  /** Server-only Brave Search key. Null when unset — no web results are invented. */
+  allowPaidSynthesis: boolean;
+  /** Server-only Brave Search key. A key alone does not authorize a paid search. */
   braveSearchApiKey: string | null;
   webSearchConfigured: boolean;
-  /** OpenAI Images model. Generation still requires OPENAI_API_KEY. */
-  imageModel: string;
+  allowPaidSearch: boolean;
+  /** Kept so older env files still parse. Not used to call an image API. */
+  imageProvider: 'local' | 'cloudflare' | 'auto' | 'openai';
+  localImageUrl: string | null;
+  cloudflareAccountId: string | null;
+  cloudflareApiToken: string | null;
+  /** Nibrexo image worker. A vendor token is never enough. */
+  imageEngineUrl: string | null;
+  imageEngineToken: string | null;
+  imageWeightsDir: string | null;
   imageGenerationConfigured: boolean;
+  imageHourlyLimit: number;
 }
 
 export function publicEnv(): PublicEnv {
@@ -125,6 +152,16 @@ export function serverEnv(): ServerEnv {
   const emailConfigured = emailProvider === 'resend' && Boolean(resendKey && emailFrom);
   const deepseekApiKey = optional(process.env.DEEPSEEK_API_KEY) ?? null;
   const braveSearchApiKey = optional(process.env.BRAVE_SEARCH_API_KEY) ?? null;
+  const allowPaidSynthesis = flag(process.env.NIBREXO_ALLOW_PAID_SYNTHESIS);
+  const allowPaidSearch = flag(process.env.NIBREXO_ALLOW_PAID_SEARCH);
+  const imageProvider = imageProviderFrom(optional(process.env.NIBREXO_IMAGE_PROVIDER));
+  const localImageUrl = httpUrl(optional(process.env.NIBREXO_LOCAL_IMAGE_URL));
+  const cloudflareAccountId = optional(process.env.CLOUDFLARE_ACCOUNT_ID) ?? null;
+  const cloudflareApiToken = optional(process.env.CLOUDFLARE_API_TOKEN) ?? null;
+  const imageEngineUrl = httpUrl(optional(process.env.NIBREXO_IMAGE_ENGINE_URL)) ?? localImageUrl;
+  const imageEngineToken = optional(process.env.NIBREXO_IMAGE_ENGINE_TOKEN) ?? null;
+  const imageWeightsDir = optional(process.env.NIBREXO_IMAGE_WEIGHTS_DIR) ?? null;
+  const hourly = Number(optional(process.env.NIBREXO_IMAGE_HOURLY_LIMIT) ?? '4');
 
   return {
     ...pub,
@@ -149,11 +186,20 @@ export function serverEnv(): ServerEnv {
     emailConfigured,
     deepseekApiKey,
     deepseekModel: optional(process.env.NIBREXO_DEEPSEEK_MODEL) ?? 'deepseek-flash',
-    deepseekConfigured: Boolean(deepseekApiKey),
+    allowPaidSynthesis,
+    deepseekConfigured: allowPaidSynthesis && Boolean(deepseekApiKey),
     braveSearchApiKey,
-    webSearchConfigured: Boolean(braveSearchApiKey),
-    imageModel: optional(process.env.NIBREXO_IMAGE_MODEL) ?? 'gpt-image-1.5',
-    imageGenerationConfigured: Boolean(openAiApiKey),
+    allowPaidSearch,
+    webSearchConfigured: allowPaidSearch && Boolean(braveSearchApiKey),
+    imageProvider,
+    localImageUrl,
+    cloudflareAccountId,
+    cloudflareApiToken,
+    imageEngineUrl,
+    imageEngineToken,
+    imageWeightsDir,
+    imageGenerationConfigured: Boolean(imageEngineUrl),
+    imageHourlyLimit: Number.isFinite(hourly) ? Math.max(1, Math.min(20, Math.round(hourly))) : 4,
     oauthClients: {
       // TikTok names its id `client_key`; the env var mirrors the provider.
       tiktok: {

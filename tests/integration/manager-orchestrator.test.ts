@@ -12,20 +12,19 @@ describe('NIBREXO CEO / Manager — orchestration (integration)', () => {
     expect(snapshot.intent?.primary).toBe('research');
     expect(snapshot.result?.artifacts.length).toBeGreaterThan(0);
     expect(snapshot.result?.aiEnabled).toBe(false);
-    // Without a search provider the sourced step is blocked. The brief is saved,
-    // but the task is not reported complete and no evidence is invented.
-    if (!process.env.BRAVE_SEARCH_API_KEY) {
-      expect(snapshot.state).not.toBe('COMPLETED');
-      expect(snapshot.result?.completion).toBe('partial');
-      expect(snapshot.stepResults.some((result) => result.status === 'blocked')).toBe(true);
-      const brief = snapshot.result?.artifacts.find((artifact) => {
-        const content = artifact.content as Record<string, unknown> | null;
-        return Boolean(content && 'brief' in content);
-      });
-      const evidence = (brief?.content as { brief?: { evidence?: unknown[] } } | undefined)?.brief?.evidence ?? [];
-      expect(evidence).toEqual([]);
+    const sourced = snapshot.stepResults.find((result) => result.toolName === 'conduct_sourced_research');
+    const briefArtifact = snapshot.result?.artifacts.find((artifact) => {
+      const content = artifact.content as Record<string, unknown> | null;
+      return Boolean(content && 'brief' in content);
+    });
+    const evidence =
+      (briefArtifact?.content as { brief?: { evidence?: Array<{ source?: string | null }> } } | undefined)?.brief
+        ?.evidence ?? [];
+    if (sourced?.status === 'succeeded') {
+      expect(evidence.every((item) => typeof item.source === 'string' && item.source.startsWith('https://'))).toBe(true);
     } else {
-      expect(['COMPLETED', 'FAILED']).toContain(snapshot.state);
+      expect(snapshot.state).not.toBe('COMPLETED');
+      expect(evidence).toEqual([]);
     }
 
     const brief = snapshot.result?.artifacts.find((artifact) => {

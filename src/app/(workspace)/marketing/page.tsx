@@ -39,7 +39,12 @@ export default async function MarketingPage() {
       <PageHeader
         description="Bring drafts, campaign intent and visual direction together without pretending anything has been published or measured when it has not."
         title="Marketing workspace"
-        actions={<Link className="btn-primary" href="/manager?request=Create%20a%20content%20campaign">Create with the Manager <ArrowRightIcon size={15} /></Link>}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <Link className="btn-secondary" href="/manager?request=Generate%20a%20product%20image%20of%20a%20premium%20minimalist%20desk%20lamp%20and%20save%20it%20to%20my%20Content%20Library">Generate an image</Link>
+            <Link className="btn-primary" href="/manager?request=Create%20a%20content%20campaign">Create with the Manager <ArrowRightIcon size={15} /></Link>
+          </div>
+        }
       />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">

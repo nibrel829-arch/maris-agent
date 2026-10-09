@@ -23,6 +23,9 @@ coverage/
 supabase/.temp/
 .supabase/
 
+# Local image-engine weights. Never commit model files.
+.nibrexo-image/
+
 # misc
 .DS_Store
 *.pem

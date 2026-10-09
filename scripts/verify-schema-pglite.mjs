@@ -164,6 +164,7 @@ for (const name of [
   '0010_unified_inbox.sql',
   '0011_email_templates_sending.sql',
   '0012_email_sequences_execution.sql',
+  '0013_generated_media.sql',
 ]) {
   await db.exec(migrationSql(readFileSync(resolve(root, 'supabase/migrations', name), 'utf8')));
   console.log(`  ✓ applied ${name}`);

@@ -155,6 +155,15 @@ export interface MediaFile {
   created_by: UUID | null;
   created_at: ISODateTime;
   updated_at: ISODateTime;
+  task_id?: UUID | null;
+  step_id?: string | null;
+  provider?: string | null;
+  model?: string | null;
+  prompt?: string | null;
+  negative_prompt?: string | null;
+  width?: number | null;
+  height?: number | null;
+  sha256?: string | null;
 }
 
 export interface ContentItem {

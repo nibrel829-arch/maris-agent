@@ -19,6 +19,7 @@
     "auth:provision": "tsx scripts/provision-owner.ts --apply",
     "verify": "npm run typecheck && npm run lint && npm test",
     "verify:schema": "node scripts/verify-schema-pglite.mjs",
+    "image-engine": "python3 scripts/nibrexo-image-engine.py serve",
     "db:sql": "node scripts/emit-migrations.mjs",
     "db:sql:stdout": "node scripts/emit-migrations.mjs --stdout"
   },

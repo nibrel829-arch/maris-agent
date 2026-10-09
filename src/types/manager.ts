@@ -185,7 +185,10 @@ export interface ToolContext {
   runId: string;
   /** Idempotency key — retries must not duplicate external actions. */
   idempotencyKey: string;
+  stepId?: string;
   signal?: AbortSignal;
+  /** Optional live update while a long tool, such as image generation, is running. */
+  onProgress?: (update: { stage: string; message: string; step?: number; total?: number }) => void;
 }
 
 export interface ToolPermission {

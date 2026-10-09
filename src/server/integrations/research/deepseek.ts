@@ -31,12 +31,12 @@ export async function deepseekChat(input: {
   maxTokens?: number;
 }): Promise<DeepSeekResult> {
   const env = serverEnv();
-  if (!env.deepseekApiKey) {
+  if (!env.allowPaidSynthesis || !env.deepseekApiKey) {
     return {
       status: 'needs_configuration',
-      missing: ['DEEPSEEK_API_KEY'],
+      missing: env.allowPaidSynthesis ? ['DEEPSEEK_API_KEY'] : ['NIBREXO_ALLOW_PAID_SYNTHESIS'],
       message:
-        'DeepSeek is not configured. Set DEEPSEEK_API_KEY on the server. The official endpoint is POST https://api.deepseek.com/chat/completions. No model text was generated.',
+        'DeepSeek synthesis is disabled. It is a paid chat API and is not a source-retrieval engine. Set NIBREXO_ALLOW_PAID_SYNTHESIS=1 and DEEPSEEK_API_KEY only if you accept token charges. No model text was generated.',
     };
   }
 
