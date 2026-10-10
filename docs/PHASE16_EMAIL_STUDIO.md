@@ -193,16 +193,30 @@ A real rendering matrix (Litmus/Email on Acid or manual sends to Gmail/Outlook/A
 
 ---
 
-## 5. Commit and push status
+## 5. Commit, push and remote CI status
 
-See the final commit on branch `arena/f1a6c1c0-maris-agent` (this document is committed with the implementation). Verification run before committing:
+- **Commit:** `2a5585d` — *Phase 16: visual email design & campaign studio*
+- **Branch:** `arena/f1a6c1c0-maris-agent`, pushed to `origin`.
+- **Pull request:** [#8](https://github.com/nibrel829-arch/maris-agent/pull/8) — `main` ← `arena/f1a6c1c0-maris-agent`, 1 commit, 65 files, **MERGEABLE**.
+
+Verification run locally before committing:
 
 ```
 npm run verify         # typecheck + lint + tests  → 39 files / 369 tests passing
 npm run verify:schema  # pglite: migrations 0001–0012 applied, 42 tables / 14 enums / 158 policies,
                        # all 20 required objects present, re-runnable 3x
-npm run build          # next build → success
+npm run build          # next build → success, zero warnings
 ```
+
+Remote checks on the PR (read through the GitHub API after opening #8):
+
+| Check | Result |
+| --- | --- |
+| `Typecheck, lint and test` (GitHub Actions, Node 20, `npm ci`) | **pass** (1m1s) |
+| `Vercel` deployment + `Vercel Preview Comments` | **success** — "Deployment has completed" |
+| `Supabase` check suite | queued at the time of writing |
+
+The Vercel build therefore really did run and pass. The **raw log lines are not readable** through the GitHub API (they live on Vercel's side behind auth), so I can confirm the build succeeded but cannot enumerate individual warnings. No Node version was changed and no install script was approved to make it pass: the repo declares `engines: >=20`, Next 15.5.27 supports `>=20`, and `package.json` has no preinstall/install/postinstall/prepare script. The only extra dependency used during QA was `@electric-sql/pglite`, installed with `--no-save` exactly as `scripts/verify-schema-pglite.mjs` documents, and it is not committed.
 
 Phase 16 adds 6 test files / 81 tests (render pipeline 21, starters 8, signed asset URLs 12, design service + tenancy + brand 17, Manager tools + planner 14, studio API routes 9). The full suite is 39 files / 369 tests.
 
