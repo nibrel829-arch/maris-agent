@@ -19,6 +19,7 @@ import {
   SparkIcon,
 } from '@/components/ui/icons';
 import type { ApprovalRecord } from '@/types/domain';
+import type { ArtifactPreview } from '@/server/artifacts/preview';
 import type {
   ManagerClarification,
   ManagerStage,
@@ -349,13 +350,97 @@ function DeliverableList({ deliverables, empty }: { deliverables: ArtifactSummar
               <p className="mt-0.5 text-[11px] text-slate-600">Created {formatTime(item.created_at)}</p>
             </div>
           </div>
-          <a className="btn-secondary self-start" download={item.file_name} href={`/api/manager/artifacts/${item.id}`}>
-            Download {item.format.toUpperCase()}
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a className="btn-secondary self-start" download={item.file_name} href={`/api/manager/artifacts/${item.id}`}>
+              Download {item.format.toUpperCase()}
+            </a>
+          </div>
+          <DeliverablePreview id={item.id} />
         </li>
       ))}
     </ul>
   );
+}
+
+/**
+ * Bounded preview of a stored deliverable, loaded on request. It shows the
+ * same bytes as the download (server-derived, authorized, capped in size).
+ */
+function DeliverablePreview({ id }: { id: string }) {
+  const [state, setState] = useState<{ status: 'idle' | 'loading' | 'ready' | 'error'; preview?: ArtifactPreview; message?: string }>({ status: 'idle' });
+
+  const load = useCallback(async () => {
+    setState({ status: 'loading' });
+    try {
+      const response = await fetch(`/api/manager/artifacts/${id}/preview`, { cache: 'no-store' });
+      const body = (await response.json().catch(() => null)) as
+        | { ok: true; data: { preview: ArtifactPreview } }
+        | { ok: false; error?: { message?: string } }
+        | null;
+      if (!response.ok || !body || body.ok !== true) {
+        throw new Error((body && !body.ok && body.error?.message) || 'The preview could not be loaded.');
+      }
+      setState({ status: 'ready', preview: body.data.preview });
+    } catch (error) {
+      setState({ status: 'error', message: error instanceof Error ? error.message : 'The preview could not be loaded.' });
+    }
+  }, [id]);
+
+  if (state.status === 'idle') {
+    return (
+      <button className="btn-secondary self-start" onClick={() => void load()} type="button">
+        Preview
+      </button>
+    );
+  }
+  if (state.status === 'loading') return <p className="text-xs text-slate-500">Loading preview…</p>;
+  if (state.status === 'error') {
+    return (
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-rose-300">{state.message}</p>
+        <button className="btn-secondary self-start" onClick={() => void load()} type="button">Try again</button>
+      </div>
+    );
+  }
+
+  const preview = state.preview;
+  if (!preview) return null;
+  if (preview.kind === 'table') {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="max-h-64 overflow-auto rounded-lg border border-surface-border">
+          <table className="min-w-full text-left text-xs text-slate-300">
+            <thead className="sticky top-0 bg-surface text-slate-400">
+              <tr>{preview.headers.map((header) => <th className="px-2 py-1.5 font-medium" key={header}>{header}</th>)}</tr>
+            </thead>
+            <tbody>
+              {preview.rows.map((row, rowIndex) => (
+                <tr className="border-t border-surface-border" key={rowIndex}>
+                  {row.map((cell, cellIndex) => <td className="px-2 py-1.5 align-top" key={cellIndex}>{cell}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-slate-500">
+          Showing {preview.rows.length} of {preview.totalRows} row{preview.totalRows === 1 ? '' : 's'}.
+        </p>
+      </div>
+    );
+  }
+  if (preview.kind === 'text') {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="max-h-64 space-y-2 overflow-auto rounded-lg border border-surface-border p-3 text-xs leading-5 text-slate-300">
+          {preview.paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+        </div>
+        <p className="text-[11px] text-slate-500">
+          Showing {preview.paragraphs.length} of {preview.totalParagraphs} paragraph{preview.totalParagraphs === 1 ? '' : 's'}.
+        </p>
+      </div>
+    );
+  }
+  return <p className="text-xs text-slate-500">{preview.kind === 'unsupported' ? preview.reason : preview.message}</p>;
 }
 
 function Assurance({ task }: { task: ManagerTaskSnapshot }) {

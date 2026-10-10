@@ -368,13 +368,23 @@ export function applyAnswers(
 
   const understood = understand(request);
   const rebuilt = buildPlan(intent, understood, answersFromClarificationMap(existing));
-  // Answered questions stay in the plan as history with their answers. Only
-  // questions the rebuilt plan still raises are added.
-  const stillOpen = buildClarifications(rebuilt.steps).filter((item) => !existing.has(item.field));
+  // Answered questions stay in the plan as history with their answers. A
+  // question the rebuilt plan still raises is open again even when it was
+  // answered: e.g. sources supplied with no sourced claim. Its earlier answer
+  // is not treated as satisfying the step, so the user is asked again.
+  const raised = new Map(buildClarifications(rebuilt.steps).map((item) => [item.field, item]));
+  const merged = new Map<string, ManagerClarification>();
+  for (const [field, item] of existing) {
+    const again = raised.get(field);
+    merged.set(field, again ? { ...again, id: item.id, answer: null, answeredAt: null } : item);
+  }
+  for (const [field, item] of raised) {
+    if (!merged.has(field)) merged.set(field, item);
+  }
   return {
     ...rebuilt,
     planner: plan.planner,
-    clarifications: [...existing.values(), ...stillOpen],
+    clarifications: [...merged.values()],
   };
 }
 

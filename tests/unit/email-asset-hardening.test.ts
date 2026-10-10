@@ -191,11 +191,12 @@ const download = vi.fn();
 const getJobRepository = vi.fn();
 const getRequestRepository = vi.fn();
 const getRequestMediaStorage = vi.fn();
+const getJobMediaStorage = vi.fn();
 const resolveActor = vi.fn();
 const resolveMediaFile = vi.fn();
 
 vi.mock('@/server/db', () => ({ getJobRepository, getRequestRepository }));
-vi.mock('@/server/content/storage', () => ({ getRequestMediaStorage }));
+vi.mock('@/server/content/storage', () => ({ getRequestMediaStorage, getJobMediaStorage }));
 vi.mock('@/server/content/service', () => ({
   filenameFromStoragePath: (path: string) => path.split('/').pop() ?? 'file',
   resolveMediaFile,
@@ -219,6 +220,7 @@ describe('signed asset route', () => {
       data: { mediaFiles: { get: requestRepoGet } },
     });
     getRequestMediaStorage.mockReset().mockResolvedValue({ ok: true, data: { download } });
+    getJobMediaStorage.mockReset().mockResolvedValue({ ok: true, data: { download } });
   });
 
   async function signedRequest(mediaId = MEDIA_ID, organizationId = ORG_ID) {
@@ -244,6 +246,24 @@ describe('signed asset route', () => {
     expect(response.headers.get('x-content-type-options')).toBe('nosniff');
     // The row is read with the organization filter from the verified token.
     expect(jobRepoGet).toHaveBeenCalledWith(MEDIA_ID, ORG_ID);
+    // Regression: a recipient has no session, so the bytes must come from the
+    // server-only storage client, never the session-bound one (RLS would deny).
+    expect(getJobMediaStorage).toHaveBeenCalledTimes(1);
+    expect(getRequestMediaStorage).not.toHaveBeenCalled();
+    expect(download).toHaveBeenCalledWith(`${ORG_ID}/logo.svg`);
+  });
+
+  it('returns not found, not a storage error, when the bytes are missing', async () => {
+    const { GET } = await import('@/app/api/workspace/email/assets/[mediaId]/route');
+    jobRepoGet.mockResolvedValue({ storage_path: `${ORG_ID}/gone.png` });
+    download.mockResolvedValue(null);
+
+    const response = await GET(await signedRequest(), { params: Promise.resolve({ mediaId: MEDIA_ID }) });
+
+    expect(response.status).toBe(404);
+    const body = await response.json();
+    // The error never echoes the storage path.
+    expect(JSON.stringify(body)).not.toContain(ORG_ID);
   });
 
   it('rejects a token presented against another organization', async () => {

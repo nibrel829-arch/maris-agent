@@ -33,7 +33,6 @@
  */
 
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
-import { serverEnv } from '@/lib/env';
 
 const DEFAULT_TTL_SECONDS = 30 * 24 * 60 * 60;
 const MAX_TTL_SECONDS = 180 * 24 * 60 * 60;
@@ -193,31 +192,8 @@ export function isOrganizationIdShape(value: string): boolean {
 /** Default TTL in seconds (documented in .env.example). */
 export const ASSET_URL_TTL_SECONDS = DEFAULT_TTL_SECONDS;
 
-/**
- * The validated `NIBREXO_APP_URL` origin, or null when unset or invalid.
- * Must be an absolute http(s) URL without credentials; production requires
- * https. Only the origin is kept, because asset paths are root-relative.
- */
-export function configuredAppOrigin(): string | null {
-  const raw = serverEnv().appUrl?.trim();
-  if (!raw) return null;
-  try {
-    const url = new URL(raw);
-    if (url.username || url.password) return null;
-    if (url.protocol === 'https:') return url.origin;
-    if (url.protocol === 'http:' && !isProductionRuntime()) return url.origin;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/** Diagnostic state of `NIBREXO_APP_URL` (names only, never the value). */
-export function appUrlStatus(): 'unset' | 'valid' | 'invalid' {
-  const raw = serverEnv().appUrl?.trim();
-  if (!raw) return 'unset';
-  return configuredAppOrigin() ? 'valid' : 'invalid';
-}
+import { configuredAppOrigin } from '@/lib/app-origin';
+export { appUrlStatus, configuredAppOrigin } from '@/lib/app-origin';
 
 /**
  * Best-effort absolute origin for a request. Used to build asset URLs that a

@@ -78,7 +78,15 @@ function pushResearch(
   answers: ClarificationAnswers,
 ): string {
   const sourcesText = (answers.sources ?? '').trim();
-  const question = 'Share the sources or notes to base this research on, one per line. Use "claim | source" to attach a source to a claim.';
+  // Research needs at least one sourced claim. Unsourced lines are kept as
+  // interpretation, but a brief made only of them is not research, so the step
+  // asks again instead of completing.
+  const hasSourcedClaim = sourcesText
+    ? parseSourcedLines(sourcesText).some((entry) => entry.grade === 'EVIDENCE')
+    : false;
+  const question = sourcesText
+    ? 'Each claim needs a source. Add at least one line as "claim | source", for example "Clinics book appointments by phone | Owner interview, March 2026".'
+    : 'Share the sources or notes to base this research on, one per line. Use "claim | source" to attach a source to a claim.';
   const briefIndex = steps.length;
   steps.push({
     title: 'Open a structured research brief',
@@ -87,7 +95,7 @@ function pushResearch(
     toolName: 'create_research_brief',
     input: { topic: args.topic.slice(0, 200), question: args.question, domain: args.domain },
     stage: 'execute',
-    clarification: sourcesText ? null : question,
+    clarification: hasSourcedClaim ? null : question,
     clarificationField: 'sources',
   });
   const briefId = `step-${briefIndex + 1}`;
@@ -102,10 +110,26 @@ function pushResearch(
       evidence: sourcesText ? parseSourcedLines(sourcesText) : [],
     },
     stage: 'execute',
-    clarification: sourcesText ? null : question,
+    clarification: hasSourcedClaim ? null : question,
     clarificationField: 'sources',
   });
   return briefId;
+}
+
+/**
+ * A single-line origin label for a lead, from the first supplied source line.
+ * "claim | source" keeps only the source part; the full multi-line answer is
+ * never written into a lead record or a CSV cell.
+ */
+export function leadSourceLabel(text: string | undefined): string {
+  const first = (text ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[-*]\s*/, ''))
+    .find((line) => line.length > 0);
+  if (!first) return 'unverified';
+  const parts = first.split('|');
+  const label = (parts.length > 1 ? parts.slice(1).join('|') : first).replace(/\s+/g, ' ').trim();
+  return (label || 'unverified').slice(0, 200);
 }
 
 /** Parses "claim | source" lines. A line without a source stays unverified. */
@@ -367,7 +391,7 @@ function templates(
         rationale: 'Persists a candidate with its provenance.',
         skillId: 'lead-generation',
         toolName: 'create_lead',
-        input: { name: leadName, source: (answers.sources?.trim() || 'unverified').slice(0, 200) },
+        input: { name: leadName, source: leadSourceLabel(answers.sources) },
         clarification: leadName
           ? null
           : 'No lead name, company and source were supplied. Provide the lead name and where it came from.',

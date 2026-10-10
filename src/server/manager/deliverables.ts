@@ -391,8 +391,8 @@ export function buildDeliverableSpecs(input: DeliverableInput): DeliverableSpec[
           body: {
             type: 'csv',
             csv: toCsv(
-              ['name', 'company', 'email', 'source', 'status'],
-              [[text(lead.name), text(lead.company), text(lead.email), text(lead.source), text(lead.status)]],
+              ['name', 'company', 'email', 'source', 'stage'],
+              [[text(lead.name), text(lead.company), text(lead.email), text(lead.source), text(lead.stage)]],
             ),
           },
         });
