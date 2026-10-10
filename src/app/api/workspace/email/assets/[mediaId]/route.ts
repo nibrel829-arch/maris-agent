@@ -4,7 +4,8 @@ import { getJobRepository, getRequestRepository } from '@/server/db';
 import type { NibrexoRepository } from '@/server/db/types';
 import { getRequestMediaStorage } from '@/server/content/storage';
 import { filenameFromStoragePath } from '@/server/content/service';
-import { verifyAssetToken } from '@/server/email/asset-url';
+import { isOrganizationIdShape, verifyAssetToken } from '@/server/email/asset-url';
+import { MEDIA_RESPONSE_SECURITY_HEADERS } from '@/server/content/media-headers';
 import { mediaIdSchema } from '@/server/content/validation';
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +49,7 @@ export async function GET(request: Request, extra: RouteParams): Promise<NextRes
   const exp = url.searchParams.get('exp');
   const sig = url.searchParams.get('sig');
 
-  if (!organizationId) {
+  if (!organizationId || !isOrganizationIdShape(organizationId)) {
     return jsonError('INVALID_INPUT', 'A signed organization parameter is required.', 400);
   }
 
@@ -96,7 +97,7 @@ export async function GET(request: Request, extra: RouteParams): Promise<NextRes
       'Content-Length': String(resolved.bytes.byteLength),
       'Content-Disposition': `inline; filename="${safeName}"`,
       'Cache-Control': `private, max-age=${remaining}`,
-      'X-Content-Type-Options': 'nosniff',
+      ...MEDIA_RESPONSE_SECURITY_HEADERS,
     },
   });
 }
