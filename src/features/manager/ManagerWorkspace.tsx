@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { ApprovalQueue } from '@/components/cockpit/ApprovalQueue';
 import { ManagerCommand } from '@/components/cockpit/ManagerCommand';
 import { PageHeader } from '@/components/cockpit/PageHeader';
-import { RecentTasks, STATE_TONE, humanState } from '@/components/cockpit/RecentTasks';
+import { RecentTasks } from '@/components/cockpit/RecentTasks';
 import { Badge, Card, EmptyState, ErrorState, LoadingLines } from '@/components/ui/primitives';
 import {
   ArrowRightIcon,
@@ -20,12 +20,15 @@ import {
 } from '@/components/ui/icons';
 import type { ApprovalRecord } from '@/types/domain';
 import type {
-  ManagerArtifact,
+  ManagerClarification,
   ManagerStage,
   ManagerTaskSnapshot,
   SkillDefinition,
   StepResult,
 } from '@/types/manager';
+import { needsPerson, taskStateLabel, taskStateTone, type TaskTone } from './status';
+
+type ArtifactSummary = NonNullable<ManagerTaskSnapshot['result']>['deliverables'][number];
 
 interface ApiEnvelope<T> {
   ok: boolean;
@@ -34,137 +37,64 @@ interface ApiEnvelope<T> {
 }
 
 const PIPELINE: Array<{ key: 'request' | ManagerStage; label: string; detail: string }> = [
-  { key: 'request', label: 'User request', detail: 'Your outcome and context' },
+  { key: 'request', label: 'Your request', detail: 'Your outcome and context' },
   { key: 'understand', label: 'Understands', detail: 'Clarifies the objective' },
   { key: 'classify', label: 'Classifies', detail: 'Identifies the work needed' },
-  { key: 'plan', label: 'Plans', detail: 'Maps a safe path forward' },
+  { key: 'plan', label: 'Plans', detail: 'Maps the steps and questions' },
   { key: 'select_skills', label: 'Selects skills', detail: 'Chooses useful capabilities' },
-  { key: 'execute', label: 'Executes', detail: 'Completes permitted work' },
+  { key: 'execute', label: 'Executes', detail: 'Runs permitted steps' },
   { key: 'verify', label: 'Verifies', detail: 'Checks what actually happened' },
   { key: 'quality_control', label: 'Quality control', detail: 'Applies evidence and safety checks' },
-  { key: 'deliver', label: 'Delivers', detail: 'Presents usable output' },
+  { key: 'deliver', label: 'Delivers', detail: 'Stores the real deliverables' },
   { key: 'next_best_action', label: 'Next best action', detail: 'Recommends the highest-value move' },
 ];
 
-const STEP_TONE: Record<StepResult['status'], 'info' | 'success' | 'warning' | 'danger' | 'neutral'> = {
+const STEP_TONE: Record<StepResult['status'], TaskTone> = {
   pending: 'neutral',
   running: 'info',
   awaiting_approval: 'warning',
   succeeded: 'success',
   failed: 'danger',
-  skipped: 'neutral',
+  skipped: 'warning',
   denied: 'danger',
 };
 
+const STEP_LABEL: Record<StepResult['status'], string> = {
+  pending: 'Queued',
+  running: 'Running',
+  awaiting_approval: 'Awaiting approval',
+  succeeded: 'Completed',
+  failed: 'Failed',
+  skipped: 'Needs input',
+  denied: 'Blocked by permission',
+};
+
 function titleCase(value: string): string {
-  return value
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return value.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
-function stepStatusLabel(status: StepResult['status']) {
-  const labels: Record<StepResult['status'], string> = {
-    pending: 'Not started',
-    running: 'Working',
-    awaiting_approval: 'Waiting for you',
-    succeeded: 'Completed',
-    failed: 'Needs attention',
-    skipped: 'Needs input',
-    denied: 'Stopped',
-  };
-  return labels[status];
+function formatTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString();
 }
 
-function displayFields(content: unknown): Array<{ label: string; value: string }> {
-  if (!content || typeof content !== 'object' || Array.isArray(content)) return [];
-  const source = content as Record<string, unknown>;
-  const primaryKeys = ['brief', 'concept', 'contentItem', 'emailLog', 'template', 'sequence', 'lead', 'report', 'memo', 'campaignPlan', 'socialPlan', 'communityPlan'];
-  const entity = primaryKeys.map((key) => source[key]).find((value) => value && typeof value === 'object' && !Array.isArray(value));
-  const record = (entity ?? source) as Record<string, unknown>;
-  const excluded = new Set(['id', 'organization_id', 'created_at', 'updated_at', 'created_by', 'evidence', 'findings', 'status']);
-
-  return Object.entries(record)
-    .filter(([key, value]) => !excluded.has(key) && value !== null && value !== undefined && value !== '')
-    .map(([key, value]) => {
-      let formatted = '';
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-        formatted = String(value);
-      } else if (Array.isArray(value)) {
-        formatted = value
-          .slice(0, 4)
-          .map((item) => {
-            if (typeof item === 'string' || typeof item === 'number') return String(item);
-            if (item && typeof item === 'object') {
-              const candidate = item as Record<string, unknown>;
-              return String(candidate.title ?? candidate.name ?? candidate.claim ?? candidate.subject ?? 'Structured item');
-            }
-            return '';
-          })
-          .filter(Boolean)
-          .join(' · ');
-        if (value.length > 4) formatted += ' · …';
-      } else if (value && typeof value === 'object') {
-        const nested = value as Record<string, unknown>;
-        formatted = String(nested.title ?? nested.name ?? nested.topic ?? nested.subject ?? 'Structured details saved');
-      }
-      return { label: titleCase(key), value: formatted };
-    })
-    .filter((field) => field.value.length > 0)
-    .slice(0, 5);
-}
-
-function ArtifactCard({ artifact }: { artifact: ManagerArtifact }) {
-  const fields = displayFields(artifact.content);
-
-  return (
-    <article className="rounded-xl border border-surface-border bg-surface/45 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand-300/15 bg-brand-400/10 text-brand-200">
-            <DocumentIcon size={17} />
-          </span>
-          <div className="min-w-0">
-            <h3 className="text-sm font-semibold leading-5 text-slate-100">{artifact.title}</h3>
-            <p className="mt-1 text-xs text-slate-500">{titleCase(artifact.kind)}</p>
-          </div>
-        </div>
-        {artifact.claims.length > 0 ? <Badge tone="info">{artifact.claims.length} labeled claim{artifact.claims.length === 1 ? '' : 's'}</Badge> : null}
-      </div>
-
-      {fields.length > 0 ? (
-        <dl className="mt-4 space-y-2 border-l border-surface-border pl-3">
-          {fields.map((field) => (
-            <div key={field.label}>
-              <dt className="text-[10px] font-semibold uppercase tracking-[0.13em] text-slate-500">{field.label}</dt>
-              <dd className="mt-0.5 text-xs leading-5 text-slate-300">{field.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : (
-        <p className="mt-4 text-xs leading-5 text-slate-400">A structured deliverable was saved to this Manager task.</p>
-      )}
-
-      {artifact.uncertainties.length > 0 ? (
-        <div className="mt-4 rounded-lg border border-amber-300/15 bg-amber-400/[0.055] px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-200">What still needs validation</p>
-          <ul className="mt-1.5 space-y-1 text-xs leading-5 text-amber-100/80">
-            {artifact.uncertainties.slice(0, 3).map((item) => <li key={item}>• {item}</li>)}
-          </ul>
-        </div>
-      ) : null}
-    </article>
-  );
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function ProcessFlow({ task }: { task?: ManagerTaskSnapshot }) {
   const traceStages = new Set(task?.trace.map((entry) => entry.stage) ?? []);
   const activeIndex = PIPELINE.findIndex((stage) => stage.key !== 'request' && !traceStages.has(stage.key));
+  const paused = task ? needsPerson(task.state) : false;
 
   return (
     <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5" aria-label="Manager process">
       {PIPELINE.map((stage, index) => {
         const reached = stage.key === 'request' || traceStages.has(stage.key as ManagerStage);
-        const active = !reached && (activeIndex === index || (task?.state === 'WAITING_APPROVAL' && stage.key === 'execute'));
+        const active = !reached && (activeIndex === index || (paused && stage.key === 'execute'));
         return (
           <div
             className={`relative rounded-xl border px-3 py-3 ${
@@ -201,22 +131,26 @@ function ProcessFlow({ task }: { task?: ManagerTaskSnapshot }) {
 function TaskSummary({ task, skills }: { task: ManagerTaskSnapshot; skills: SkillDefinition[] }) {
   const intent = task.intent;
   const plan = task.plan;
-  const selectedSkills = plan?.skills
-    .map((id) => skills.find((skill) => skill.id === id)?.name ?? titleCase(id))
-    .slice(0, 5) ?? [];
+  const selectedSkills =
+    plan?.skills.map((id) => skills.find((skill) => skill.id === id)?.name ?? titleCase(id)).slice(0, 5) ?? [];
+  const openCount = plan?.clarifications?.filter((item) => item.answer === null).length ?? 0;
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
       <section className="rounded-xl border border-surface-border bg-surface/40 p-4">
-        <p className="card-title">Manager understands</p>
-        <h2 className="mt-2 text-base font-semibold leading-6 text-white">{intent?.objective ?? task.request}</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">{task.request}</p>
+        <p className="card-title">Your request</p>
+        <p className="mt-2 text-sm leading-6 text-slate-300">{task.request}</p>
         {intent ? (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Badge tone="info">{titleCase(intent.primary)}</Badge>
-            <Badge>{titleCase(intent.deliverable)}</Badge>
-            {intent.medicalDomain ? <Badge tone="warning">Professional review may be needed</Badge> : null}
-          </div>
+          <>
+            <p className="mt-3 text-xs leading-5 text-slate-500">
+              Understood as: <span className="text-slate-300">{intent.objective}</span>
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Badge tone="info">{titleCase(intent.primary)}</Badge>
+              <Badge>{titleCase(intent.deliverable)}</Badge>
+              {intent.medicalDomain ? <Badge tone="warning">Professional review may be needed</Badge> : null}
+            </div>
+          </>
         ) : null}
       </section>
 
@@ -224,12 +158,14 @@ function TaskSummary({ task, skills }: { task: ManagerTaskSnapshot; skills: Skil
         <p className="card-title">Plan at a glance</p>
         {plan ? (
           <>
-            <p className="mt-2 text-sm leading-6 text-slate-300">{plan.goal}</p>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{plan.steps.length} step(s), planned by the {plan.planner} planner.</p>
             <div className="mt-4 flex flex-wrap gap-1.5">
               {selectedSkills.map((skill) => <Badge key={skill}>{skill}</Badge>)}
             </div>
-            {plan.openQuestions.length > 0 ? (
-              <p className="mt-3 text-xs leading-5 text-amber-200">{plan.openQuestions.length} open question{plan.openQuestions.length === 1 ? '' : 's'} recorded without guessing.</p>
+            {openCount > 0 ? (
+              <p className="mt-3 text-xs leading-5 text-amber-200">
+                {openCount} question{openCount === 1 ? '' : 's'} need an answer before the work can finish.
+              </p>
             ) : null}
           </>
         ) : (
@@ -240,25 +176,110 @@ function TaskSummary({ task, skills }: { task: ManagerTaskSnapshot; skills: Skil
   );
 }
 
+/** Questions the Manager asked. Answers are saved to the plan and the task resumes. */
+function QuestionsPanel({
+  clarifications,
+  canWork,
+  busy,
+  onSubmit,
+}: {
+  clarifications: ManagerClarification[];
+  canWork: boolean;
+  busy: boolean;
+  onSubmit: (answers: Record<string, string>) => void;
+}) {
+  const open = clarifications.filter((item) => item.answer === null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const filled = open.filter((item) => (values[item.field] ?? '').trim().length > 0);
+
+  if (open.length === 0) return null;
+
+  return (
+    <Card title="Needs your input">
+      <p className="mb-4 text-xs leading-5 text-slate-400">
+        The Manager did not guess these details. Answer what you can. The work resumes with your answers and nothing is invented.
+      </p>
+      <form
+        className="space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (filled.length === 0) return;
+          const answers: Record<string, string> = {};
+          for (const item of filled) answers[item.field] = (values[item.field] ?? '').trim();
+          onSubmit(answers);
+        }}
+      >
+        {open.map((item) => (
+          <label className="block" key={item.field}>
+            <span className="text-sm font-medium text-slate-200">{item.question}</span>
+            <textarea
+              className="input mt-2 min-h-[72px] w-full resize-y leading-6"
+              disabled={!canWork || busy}
+              maxLength={2000}
+              name={item.field}
+              onChange={(event) => setValues((current) => ({ ...current, [item.field]: event.target.value }))}
+              placeholder={canWork ? 'Your answer' : 'Your role can view this question but not answer it.'}
+              value={values[item.field] ?? ''}
+            />
+            <span className="mt-1 block text-[10px] uppercase tracking-[0.12em] text-slate-600">Field: {item.field}</span>
+          </label>
+        ))}
+        {canWork ? (
+          <button className="btn-primary" disabled={busy || filled.length === 0} type="submit">
+            {busy ? 'Saving…' : 'Save answers and continue'}
+          </button>
+        ) : null}
+      </form>
+    </Card>
+  );
+}
+
 function ExecutionBoard({ task }: { task: ManagerTaskSnapshot }) {
   if (!task.plan) return null;
   return (
     <div className="space-y-2">
       {task.plan.steps.map((step, index) => {
         const result = task.stepResults.find((item) => item.stepId === step.id);
-        const status = result?.status ?? 'pending';
+        const status: StepResult['status'] | 'pending' = result?.status ?? 'pending';
+        const issue = result?.issues[0];
         return (
-          <div className="flex gap-3 rounded-xl border border-surface-border bg-surface/35 p-3.5" key={step.id}>
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-raised text-xs font-semibold text-slate-400">{index + 1}</span>
-            <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <h3 className="text-sm font-medium text-slate-100">{step.title}</h3>
-                <Badge tone={STEP_TONE[status]}>{stepStatusLabel(status)}</Badge>
+          <div className="rounded-xl border border-surface-border bg-surface/35 p-3.5" key={step.id}>
+            <div className="flex gap-3">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-surface-raised text-xs font-semibold text-slate-400">{index + 1}</span>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <h3 className="text-sm font-medium text-slate-100">{step.title}</h3>
+                  <Badge tone={status === 'pending' ? 'neutral' : STEP_TONE[status]}>
+                    {status === 'pending' ? 'Queued' : STEP_LABEL[status]}
+                  </Badge>
+                </div>
+                <p className="mt-1 text-xs leading-5 text-slate-400">{step.rationale}</p>
               </div>
-              <p className="mt-1 text-xs leading-5 text-slate-400">{step.rationale}</p>
-              {result?.issues[0] ? <p className="mt-2 text-xs leading-5 text-amber-200">{result.issues[0].message}</p> : null}
-              {step.requiresApproval && status !== 'succeeded' ? <p className="mt-2 text-[11px] font-medium text-amber-200">This action remains protected by human approval.</p> : null}
             </div>
+
+            <dl className="mt-3 grid gap-x-4 gap-y-1 pl-10 text-[11px] text-slate-500 sm:grid-cols-3">
+              <div>
+                <dt className="inline">Tool: </dt>
+                <dd className="inline font-mono text-slate-400">{step.toolName ?? 'none'}</dd>
+              </div>
+              <div>
+                <dt className="inline">Started: </dt>
+                <dd className="inline text-slate-400">{formatTime(result?.startedAt)}</dd>
+              </div>
+              <div>
+                <dt className="inline">Finished: </dt>
+                <dd className="inline text-slate-400">{formatTime(result?.finishedAt)}</dd>
+              </div>
+            </dl>
+
+            {issue ? (
+              <p className="mt-2 pl-10 text-xs leading-5 text-amber-200">
+                <span className="font-semibold">{issue.code.replace(/_/g, ' ')}:</span> {issue.message}
+              </p>
+            ) : null}
+            {step.requiresApproval && status !== 'succeeded' ? (
+              <p className="mt-2 pl-10 text-[11px] font-medium text-amber-200">This action remains protected by human approval.</p>
+            ) : null}
           </div>
         );
       })}
@@ -266,11 +287,82 @@ function ExecutionBoard({ task }: { task: ManagerTaskSnapshot }) {
   );
 }
 
+/** Errors, why the task is not complete, and the next recovery step. */
+function ReasonsPanel({
+  task,
+  canWork,
+  busy,
+  onRetry,
+}: {
+  task: ManagerTaskSnapshot;
+  canWork: boolean;
+  busy: boolean;
+  onRetry: () => void;
+}) {
+  const reasons = task.result?.reasons ?? [];
+  if (reasons.length === 0) return null;
+  const retryable = task.state === 'FAILED' || task.state === 'BLOCKED';
+
+  return (
+    <Card title={task.state === 'COMPLETED' ? 'Notes' : 'Why this is not complete'}>
+      <ul className="space-y-3">
+        {reasons.map((reason, index) => (
+          <li className="rounded-lg border border-amber-300/15 bg-amber-400/[0.045] p-3 text-xs leading-5 text-amber-100" key={`${reason.code}-${index}`}>
+            <p className="font-semibold">{reason.code.replace(/_/g, ' ')}{reason.stepId ? ` · ${reason.stepId}` : ''}</p>
+            <p className="mt-1 text-amber-100/85">{reason.message}</p>
+          </li>
+        ))}
+      </ul>
+      {retryable ? (
+        <div className="mt-4">
+          <p className="mb-2 text-xs leading-5 text-slate-400">
+            After fixing the cause (for example connecting a provider or changing permissions), the Manager re-runs only the steps that did not succeed.
+          </p>
+          {canWork ? (
+            <button className="btn-secondary" disabled={busy} onClick={onRetry} type="button">
+              {busy ? 'Retrying…' : 'Retry the unfinished steps'}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </Card>
+  );
+}
+
+function DeliverableList({ deliverables, empty }: { deliverables: ArtifactSummary[]; empty: string }) {
+  if (deliverables.length === 0) {
+    return <EmptyState description={empty} title="No deliverables yet" />;
+  }
+  return (
+    <ul className="grid gap-3 lg:grid-cols-2">
+      {deliverables.map((item) => (
+        <li className="flex flex-col justify-between gap-4 rounded-xl border border-surface-border bg-surface/45 p-4" key={item.id}>
+          <div className="flex min-w-0 gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-brand-300/15 bg-brand-400/10 text-brand-200">
+              <DocumentIcon size={17} />
+            </span>
+            <div className="min-w-0">
+              <h3 className="truncate text-sm font-semibold leading-5 text-slate-100" title={item.title}>{item.title}</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                {titleCase(item.kind)} · {item.format.toUpperCase()} · {formatBytes(item.size_bytes)}
+              </p>
+              <p className="mt-0.5 text-[11px] text-slate-600">Created {formatTime(item.created_at)}</p>
+            </div>
+          </div>
+          <a className="btn-secondary self-start" download={item.file_name} href={`/api/manager/artifacts/${item.id}`}>
+            Download {item.format.toUpperCase()}
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Assurance({ task }: { task: ManagerTaskSnapshot }) {
   const verification = task.result?.verification;
   const quality = task.result?.quality;
   if (!verification && !quality) {
-    return <EmptyState description="Verification and quality outcomes will appear after the Manager has completed enough work to assess." title="No assurance record yet" />;
+    return <EmptyState description="Verification and quality outcomes appear once the Manager has executed enough steps to assess." title="No assurance record yet" />;
   }
 
   return (
@@ -278,11 +370,13 @@ function Assurance({ task }: { task: ManagerTaskSnapshot }) {
       <section className="rounded-xl border border-surface-border bg-surface/35 p-4">
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm font-semibold text-slate-100">Verification</p>
-          {verification ? <Badge tone={verification.ok ? 'success' : 'warning'}>{verification.ok ? 'Checked' : 'Review findings'}</Badge> : null}
+          {verification ? (
+            <Badge tone={verification.ok ? 'success' : 'warning'}>{verification.ok ? 'Verified' : 'Not verified'}</Badge>
+          ) : null}
         </div>
         {verification ? (
           <ul className="mt-3 space-y-2">
-            {verification.checks.slice(0, 3).map((check) => (
+            {verification.checks.map((check) => (
               <li className="flex gap-2 text-xs leading-5 text-slate-400" key={check.name}>
                 <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${check.passed ? 'bg-emerald-300' : 'bg-amber-300'}`} />
                 {check.detail}
@@ -301,7 +395,7 @@ function Assurance({ task }: { task: ManagerTaskSnapshot }) {
             <p className="mt-3 text-xs leading-5 text-slate-400">No quality findings were recorded.</p>
           ) : (
             <ul className="mt-3 space-y-2">
-              {quality.findings.slice(0, 3).map((finding) => (
+              {quality.findings.slice(0, 4).map((finding) => (
                 <li className="text-xs leading-5 text-slate-400" key={`${finding.id}-${finding.detail}`}>
                   <span className="font-medium text-slate-200">{finding.rule}:</span> {finding.detail}
                 </li>
@@ -314,14 +408,55 @@ function Assurance({ task }: { task: ManagerTaskSnapshot }) {
   );
 }
 
+/** Approval and audit history for this assignment, with decision times. */
+function HistoryPanel({ task, approvals }: { task: ManagerTaskSnapshot; approvals: ApprovalRecord[] }) {
+  return (
+    <div className="space-y-5">
+      <div>
+        <p className="card-title mb-2">Approvals</p>
+        {approvals.length === 0 ? (
+          <p className="text-xs leading-5 text-slate-500">No external action has required an approval for this assignment.</p>
+        ) : (
+          <ul className="space-y-2">
+            {approvals.map((approval) => (
+              <li className="rounded-lg border border-surface-border bg-surface/30 p-3 text-xs leading-5 text-slate-400" key={approval.id}>
+                <span className="font-medium text-slate-200">{approval.action}</span> · {approval.tool_name} · risk {approval.risk}
+                <br />
+                Status: <span className="text-slate-200">{titleCase(approval.status)}</span>
+                {approval.decided_at ? <> · decided {formatTime(approval.decided_at)}</> : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div>
+        <p className="card-title mb-2">Run record</p>
+        <ol className="space-y-3 border-l border-surface-border pl-4">
+          {task.trace.map((entry, index) => (
+            <li className="relative text-sm leading-6 text-slate-400" key={`${entry.stage}-${entry.at}-${index}`}>
+              <span className="absolute -left-[21px] top-2 h-2 w-2 rounded-full bg-brand-300" />
+              <span className="text-xs text-slate-500">{formatTime(entry.at)}</span>
+              <br />
+              <span className="font-medium text-slate-200">{titleCase(entry.stage)}:</span> {entry.message}
+            </li>
+          ))}
+        </ol>
+      </div>
+    </div>
+  );
+}
+
 export function ManagerWorkspace({
   skills,
   canDecide,
+  canWork = false,
   initialTaskId = null,
   initialRequest = '',
 }: {
   skills: SkillDefinition[];
   canDecide: boolean;
+  /** ai:create — may start, answer and resume work. */
+  canWork?: boolean;
   initialTaskId?: string | null;
   initialRequest?: string;
 }) {
@@ -329,8 +464,11 @@ export function ManagerWorkspace({
   const [task, setTask] = useState<ManagerTaskSnapshot | null>(null);
   const [recentTasks, setRecentTasks] = useState<ManagerTaskSnapshot[]>([]);
   const [approvals, setApprovals] = useState<ApprovalRecord[]>([]);
+  const [orgDeliverables, setOrgDeliverables] = useState<ArtifactSummary[]>([]);
   const [loadingTask, setLoadingTask] = useState(Boolean(initialTaskId));
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const loadApprovals = useCallback(async (taskId: string) => {
     const response = await fetch('/api/manager/approvals');
@@ -340,24 +478,27 @@ export function ManagerWorkspace({
     }
   }, []);
 
-  const loadTask = useCallback(async (taskId: string) => {
-    setLoadingTask(true);
-    setLoadError(null);
-    try {
-      const response = await fetch(`/api/manager/tasks/${taskId}`);
-      const payload = (await response.json()) as ApiEnvelope<ManagerTaskSnapshot>;
-      if (!response.ok || !payload.ok || !payload.data) {
-        setLoadError(payload.error?.message ?? 'This Manager task could not be loaded.');
-        return;
+  const loadTask = useCallback(
+    async (taskId: string) => {
+      setLoadingTask(true);
+      setLoadError(null);
+      try {
+        const response = await fetch(`/api/manager/tasks/${taskId}`);
+        const payload = (await response.json()) as ApiEnvelope<ManagerTaskSnapshot>;
+        if (!response.ok || !payload.ok || !payload.data) {
+          setLoadError(payload.error?.message ?? 'This Manager task could not be loaded.');
+          return;
+        }
+        setTask(payload.data);
+        await loadApprovals(payload.data.id);
+      } catch {
+        setLoadError('Network error while loading this Manager task.');
+      } finally {
+        setLoadingTask(false);
       }
-      setTask(payload.data);
-      await loadApprovals(payload.data.id);
-    } catch {
-      setLoadError('Network error while loading this Manager task.');
-    } finally {
-      setLoadingTask(false);
-    }
-  }, [loadApprovals]);
+    },
+    [loadApprovals],
+  );
 
   const loadRecent = useCallback(async () => {
     try {
@@ -369,42 +510,86 @@ export function ManagerWorkspace({
     }
   }, []);
 
+  const loadDeliverables = useCallback(async () => {
+    try {
+      const response = await fetch('/api/manager/deliverables');
+      const payload = (await response.json()) as ApiEnvelope<ArtifactSummary[]>;
+      if (response.ok && payload.ok && payload.data) setOrgDeliverables(payload.data);
+    } catch {
+      // Shown as empty; the task view still lists its own deliverables.
+    }
+  }, []);
+
   useEffect(() => {
     void loadRecent();
-  }, [loadRecent]);
+    void loadDeliverables();
+  }, [loadRecent, loadDeliverables]);
 
   useEffect(() => {
     if (initialTaskId) void loadTask(initialTaskId);
   }, [initialTaskId, loadTask]);
 
-  const selectedApprovals = useMemo(
-    () => approvals.filter((approval) => approval.status === 'pending'),
-    [approvals],
-  );
+  const pendingApprovals = useMemo(() => approvals.filter((approval) => approval.status === 'pending'), [approvals]);
 
   const onTaskCreated = useCallback(
     (created: ManagerTaskSnapshot) => {
       setTask(created);
       setApprovals([]);
       setLoadError(null);
+      setActionError(null);
       setRecentTasks((existing) => [created, ...existing.filter((item) => item.id !== created.id)].slice(0, 8));
       router.replace(`/manager?task=${created.id}`);
       void loadApprovals(created.id);
+      void loadDeliverables();
     },
-    [loadApprovals, router],
+    [loadApprovals, loadDeliverables, router],
+  );
+
+  /** Resumes the task, optionally with answers. The server re-checks everything. */
+  const continueTask = useCallback(
+    async (answers?: Record<string, string>) => {
+      if (!task) return;
+      setBusy(true);
+      setActionError(null);
+      try {
+        const response = await fetch(`/api/manager/tasks/${task.id}/resume`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(answers ? { answers } : {}),
+        });
+        const payload = (await response.json()) as ApiEnvelope<ManagerTaskSnapshot>;
+        if (!response.ok || !payload.ok || !payload.data) {
+          setActionError(payload.error?.message ?? 'The assignment could not continue. Nothing was changed.');
+          return;
+        }
+        setTask(payload.data);
+        await loadApprovals(payload.data.id);
+        await loadRecent();
+        await loadDeliverables();
+      } catch {
+        setActionError('Network error. The assignment did not change; try again.');
+      } finally {
+        setBusy(false);
+      }
+    },
+    [loadApprovals, loadDeliverables, loadRecent, task],
   );
 
   const refreshSelectedTask = useCallback(async () => {
     if (task?.id) {
       await loadTask(task.id);
       await loadRecent();
+      await loadDeliverables();
     }
-  }, [loadRecent, loadTask, task?.id]);
+  }, [loadDeliverables, loadRecent, loadTask, task?.id]);
+
+  const deliverables = task?.result?.deliverables ?? [];
+  const clarifications = task?.plan?.clarifications ?? [];
 
   return (
     <div className="mx-auto max-w-[1540px] space-y-6">
       <PageHeader
-        description="Nibrexo turns your objective into a safe, visible sequence of work: it understands, plans, acts within its permissions, verifies the outcome and recommends what should happen next."
+        description="Nibrexo turns your objective into visible work: it plans the steps, runs what it is permitted to run, asks you for anything missing, verifies the result and stores the real deliverables."
         title="Manager workspace"
         actions={
           task ? (
@@ -418,6 +603,7 @@ export function ManagerWorkspace({
       <ManagerCommand initialValue={initialRequest} onTaskCreated={onTaskCreated} />
 
       {loadError ? <ErrorState message={loadError} /> : null}
+      {actionError ? <ErrorState message={actionError} /> : null}
 
       {loadingTask ? (
         <Card title="Loading Manager work">
@@ -440,9 +626,9 @@ export function ManagerWorkspace({
                 </div>
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
-                <Badge tone={STATE_TONE[task.state] ?? 'neutral'}>{humanState(task.state)}</Badge>
+                <Badge tone={taskStateTone(task.state)}>{taskStateLabel(task.state)}</Badge>
                 {task.result?.aiEnabled === false ? <Badge>Structured planning</Badge> : null}
-                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500"><ClockIcon size={13} /> Updated {new Date(task.updatedAt).toLocaleString()}</span>
+                <span className="inline-flex items-center gap-1 text-[11px] text-slate-500"><ClockIcon size={13} /> Updated {formatTime(task.updatedAt)}</span>
               </div>
             </div>
             <div className="p-5 sm:p-6">
@@ -454,7 +640,16 @@ export function ManagerWorkspace({
 
           <div className="grid gap-6 xl:grid-cols-[minmax(0,1.42fr)_minmax(330px,0.78fr)]">
             <div className="space-y-6">
-              <Card title="Execution">
+              {task.state === 'NEEDS_INPUT' ? (
+                <QuestionsPanel
+                  busy={busy}
+                  canWork={canWork}
+                  clarifications={clarifications}
+                  onSubmit={(answers) => void continueTask(answers)}
+                />
+              ) : null}
+
+              <Card title="Plan and step progress">
                 <ExecutionBoard task={task} />
               </Card>
 
@@ -463,29 +658,27 @@ export function ManagerWorkspace({
               </Card>
 
               <Card
-                title="Delivered work"
-                action={task.result?.artifacts.length ? <Badge tone="success">{task.result.artifacts.length} saved</Badge> : null}
+                title="Deliverables"
+                action={deliverables.length ? <Badge tone="success">{deliverables.length} stored</Badge> : null}
               >
-                {task.result?.artifacts.length ? (
-                  <div className="grid gap-3 lg:grid-cols-2">
-                    {task.result.artifacts.map((artifact, index) => <ArtifactCard artifact={artifact} key={`${artifact.title}-${index}`} />)}
-                  </div>
-                ) : (
-                  <EmptyState
-                    description="The Manager has not saved a deliverable for this task yet. If work is paused, review the decision or missing input shown above."
-                    title="No delivered work yet"
-                  />
-                )}
+                <DeliverableList
+                  deliverables={deliverables}
+                  empty={
+                    task.state === 'COMPLETED'
+                      ? 'This task completed without a stored deliverable. Treat it as not delivered and check the reasons.'
+                      : 'Deliverables are stored only after verification passes. Answer the questions or resolve the reasons to produce them.'
+                  }
+                />
               </Card>
             </div>
 
             <aside className="space-y-6">
               <Card
                 title="Decision required"
-                action={selectedApprovals.length > 0 ? <Badge tone="warning">{selectedApprovals.length} waiting</Badge> : <Badge tone="success">Clear</Badge>}
+                action={pendingApprovals.length > 0 ? <Badge tone="warning">{pendingApprovals.length} waiting</Badge> : <Badge tone="success">Clear</Badge>}
               >
                 <ApprovalQueue
-                  approvals={selectedApprovals}
+                  approvals={pendingApprovals}
                   canDecide={canDecide}
                   compact={false}
                   emptyDescription="No external or high-impact action is waiting on you for this assignment."
@@ -493,6 +686,17 @@ export function ManagerWorkspace({
                   onDecisionComplete={refreshSelectedTask}
                 />
               </Card>
+
+              <ReasonsPanel busy={busy} canWork={canWork} onRetry={() => void continueTask()} task={task} />
+
+              {task.state === 'WAITING_APPROVAL' && canWork ? (
+                <Card title="Continue after a decision">
+                  <p className="mb-3 text-xs leading-5 text-slate-400">Once the approval is decided, continue the assignment to run the approved step.</p>
+                  <button className="btn-secondary" disabled={busy} onClick={() => void continueTask()} type="button">
+                    {busy ? 'Continuing…' : 'Continue assignment'}
+                  </button>
+                </Card>
+              ) : null}
 
               <Card title="Next best action">
                 {task.result?.nextBestAction.length ? (
@@ -529,50 +733,43 @@ export function ManagerWorkspace({
                 </Card>
               ) : null}
 
-              {task.result?.issues.length ? (
-                <Card title="Needs attention">
-                  <ul className="space-y-3">
-                    {task.result.issues.map((issue) => (
-                      <li className="rounded-lg border border-amber-300/15 bg-amber-400/[0.045] p-3 text-xs leading-5 text-amber-100" key={`${issue.code}-${issue.message}`}>
-                        <p className="font-semibold">{issue.code.replace(/_/g, ' ')}</p>
-                        <p className="mt-1 text-amber-100/80">{issue.message}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
-              ) : null}
+              <Card title="Audit and approval history">
+                <HistoryPanel approvals={approvals} task={task} />
+              </Card>
             </aside>
           </div>
 
           <details className="group rounded-2xl border border-surface-border bg-surface/30 p-4">
             <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-slate-300">
-              <span className="flex items-center gap-2"><SparkIcon className="text-brand-300" size={16} /> Manager run record</span>
+              <span className="flex items-center gap-2"><SparkIcon className="text-brand-300" size={16} /> Full Manager trace</span>
               <ArrowRightIcon className="transition group-open:rotate-90" size={15} />
             </summary>
-            <ol className="mt-4 space-y-3 border-l border-surface-border pl-4">
-              {task.trace.map((entry, index) => (
-                <li className="relative text-sm leading-6 text-slate-400" key={`${entry.stage}-${entry.at}-${index}`}>
-                  <span className="absolute -left-[21px] top-2 h-2 w-2 rounded-full bg-brand-300" />
-                  <span className="font-medium text-slate-200">{titleCase(entry.stage)}:</span> {entry.message}
-                </li>
-              ))}
-            </ol>
+            <p className="mt-3 text-xs text-slate-500">The complete record is kept with timestamps in the audit and approval history panel.</p>
           </details>
         </>
       ) : !loadingTask ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.25fr)_minmax(330px,0.75fr)]">
           <Card title="How your Manager works">
-            <p className="max-w-2xl text-sm leading-6 text-slate-400">You set the direction. The Manager makes the work legible, uses only the capabilities that fit, verifies what happened and pauses for you before any protected action.</p>
+            <p className="max-w-2xl text-sm leading-6 text-slate-400">You set the direction. The Manager makes the work visible, asks for anything it cannot responsibly assume, uses only permitted capabilities, verifies the output and stores the deliverables it actually produced. Protected actions wait for your approval.</p>
             <div className="mt-5"><ProcessFlow /></div>
           </Card>
           <Card title="Recent assignments">
             <RecentTasks
-              emptyDescription="Your completed and in-progress Manager work will be kept here as useful context."
+              emptyDescription="Your assignments will be kept here with their status."
               emptyTitle="No assignment yet"
               tasks={recentTasks}
             />
           </Card>
         </div>
+      ) : null}
+
+      {!loadingTask ? (
+        <Card title="Deliverables" action={orgDeliverables.length ? <Badge tone="success">{orgDeliverables.length} stored</Badge> : null}>
+          <DeliverableList
+            deliverables={orgDeliverables}
+            empty="Deliverables from completed assignments appear here, with their download links."
+          />
+        </Card>
       ) : null}
     </div>
   );

@@ -18,7 +18,16 @@ interface WorkTypeRule {
   workType: WorkType;
   signals: string[];
   weight: number;
+  /**
+   * Phrase-level signals name the intent directly ("content campaign",
+   * "outreach plan"). Each match adds PHRASE_BONUS, so a phrase outweighs
+   * the loose single words of another rule (Phase 17).
+   */
+  phrases?: string[];
 }
+
+/** Score added per matched phrase. Higher than any single keyword weight. */
+const PHRASE_BONUS = 3;
 
 /**
  * Ordered by specificity: domain-specific rules are checked before generic
@@ -60,6 +69,7 @@ const WORK_TYPE_RULES: readonly WorkTypeRule[] = [
     workType: 'outreach',
     signals: ['outreach', 'cold', 'intro email', 'reach out', 'pitch'],
     weight: 2,
+    phrases: ['outreach plan', 'outreach campaign', 'outreach strategy'],
   },
   {
     workType: 'sales',
@@ -90,16 +100,19 @@ const WORK_TYPE_RULES: readonly WorkTypeRule[] = [
     workType: 'marketing',
     signals: ['marketing', 'campaign', 'launch', 'positioning', 'go-to-market', 'gtm', 'awareness'],
     weight: 2,
+    phrases: ['content campaign', 'marketing campaign', 'campaign plan', 'launch campaign', 'go-to-market plan'],
   },
   {
     workType: 'research',
     signals: ['research', 'investigate', 'analyse', 'analyze', 'study', 'compare', 'market size', 'competitor', 'evidence', 'sources'],
     weight: 2,
+    phrases: ['market research', 'competitor analysis', 'market analysis', 'do research', 'research on', 'research into'],
   },
   {
     workType: 'reporting',
     signals: ['report', 'summary', 'metrics', 'kpi', 'dashboard', 'weekly update', 'status update'],
     weight: 2,
+    phrases: ['write a report', 'write report', 'business report', 'status report', 'weekly report'],
   },
   {
     workType: 'quality_control',
@@ -311,11 +324,12 @@ export function classify(
 
   for (const rule of WORK_TYPE_RULES) {
     const signals = matchSignals(lower, rule.signals);
-    if (signals.length === 0) continue;
+    const phrases = matchSignals(lower, rule.phrases ?? []);
+    if (signals.length === 0 && phrases.length === 0) continue;
     scored.push({
       workType: rule.workType,
-      score: signals.length * rule.weight,
-      signals,
+      score: signals.length * rule.weight + phrases.length * PHRASE_BONUS,
+      signals: [...phrases, ...signals],
     });
   }
 

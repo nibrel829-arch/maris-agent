@@ -22,6 +22,7 @@ describe('Supabase migration contract', () => {
       '0010_unified_inbox.sql',
       '0011_email_templates_sending.sql',
       '0012_email_design_studio.sql',
+      '0013_manager_execution.sql',
     ]);
   });
 

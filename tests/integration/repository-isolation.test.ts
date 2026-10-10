@@ -12,7 +12,7 @@ describe('Repository tenant boundary and Manager persistence', () => {
     const store = repo();
     const owner = actor();
     const task = await runManagerTask({
-      request: 'Research the market for dental scheduling software',
+      request: 'Draft a LinkedIn post about our new service',
       actor: owner,
       repo: store,
     });
@@ -21,8 +21,12 @@ describe('Repository tenant boundary and Manager persistence', () => {
     const otherTenant = await store.tasks.get(task.id, OTHER_ORG);
     const logsForOwner = await store.activityLogs.list(TEST_ORG, { limit: 100 });
     const logsForOtherOrg = await store.activityLogs.list(OTHER_ORG, { limit: 100 });
+    const artifactsForOwner = await store.managerArtifacts.list(TEST_ORG, { limit: 100 });
+    const artifactsForOtherOrg = await store.managerArtifacts.list(OTHER_ORG, { limit: 100 });
 
-    expect(sameTenant?.result?.artifacts.length).toBeGreaterThan(0);
+    expect(sameTenant?.state).toBe('COMPLETED');
+    expect(artifactsForOwner.some((artifact) => artifact.task_id === task.id)).toBe(true);
+    expect(artifactsForOtherOrg).toEqual([]);
     expect(otherTenant).toBeNull();
     expect(logsForOwner.some((log) => log.entity_id === task.id)).toBe(true);
     expect(logsForOtherOrg).toEqual([]);

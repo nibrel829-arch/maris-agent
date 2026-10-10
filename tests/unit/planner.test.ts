@@ -42,8 +42,46 @@ describe('Manager planner (CEO spec §6, §7)', () => {
 
   it('marks steps with missing mandatory input as clarifications instead of guessing', () => {
     const { plan } = planFor('Create a follow-up email sequence for new enquiries');
+    const template = plan.steps.find((step) => step.toolName === 'create_email_template');
+    expect(template?.clarification).toMatch(/outreach audience/i);
+    expect(template?.clarificationField).toBe('audience');
+    expect(plan.steps.some((step) => step.toolName === 'prepare_email')).toBe(false);
+  });
+
+  it('plans prepare_email only when a recipient is given', () => {
+    const { plan } = planFor('Draft a follow-up for clinic@example.com about their enquiry');
     const prepare = plan.steps.find((step) => step.toolName === 'prepare_email');
-    expect(prepare?.clarification).toMatch(/recipient email address/i);
+    expect(prepare).toBeDefined();
+    expect(prepare?.clarification).toBeNull();
+  });
+
+  it('keeps product, campaign and research gaps as named clarifications', () => {
+    const product = planFor('Build a product: a treatment planning template pack').plan;
+    const concept = product.steps.find((step) => step.toolName === 'create_product_concept');
+    expect(concept?.clarificationField).toBe('targetCustomer');
+    expect(concept?.input.targetCustomer).toBe('');
+    expect(product.clarifications?.map((item) => item.field)).toEqual(['sources', 'targetCustomer']);
+
+    const campaign = planFor('Create a content campaign for our spring skincare launch on instagram and linkedin').plan;
+    const campaignStep = campaign.steps.find((step) => step.toolName === 'create_campaign_plan');
+    expect(campaignStep?.clarificationField).toBe('audience');
+    expect(JSON.stringify(campaignStep?.input)).not.toMatch(/to be confirmed/i);
+  });
+
+  it('never places placeholder text into a step input', () => {
+    const requests = [
+      'Build a product: a treatment planning template pack',
+      'Create a content campaign for our spring skincare launch on instagram and linkedin',
+      'Create a social campaign plan for instagram',
+      'Prepare a focused outreach plan for dental clinics in Karachi',
+      'Research the market for dental scheduling software',
+    ];
+    for (const request of requests) {
+      const { plan } = planFor(request);
+      for (const step of plan.steps) {
+        expect(JSON.stringify(step.input), request).not.toMatch(/to be confirmed|to be determined|lorem ipsum/i);
+      }
+    }
   });
 
   it('uses the deterministic planner when no AI key is configured', () => {

@@ -18,6 +18,8 @@ import type { NibrexoRepository } from '@/server/db/types';
 import type {
   DeliverableKind,
   ManagerArtifact,
+  ManagerArtifactRecord,
+  ManagerClarification,
   ManagerIntent,
   ManagerPlan,
   ManagerResult,
@@ -33,7 +35,12 @@ import type {
 import { isAiEnabled } from '@/server/ai/client';
 import { writeAudit } from './audit';
 import { executeSteps } from './execution-engine';
-import { buildPlan, refinePlanWithAi } from './planner';
+import { buildClarifications, buildPlan, refinePlanWithAi } from './planner';
+import type { ClarificationAnswers } from './planner';
+import { buildDeliverableSpecs } from './deliverables';
+import { deriveOutcome } from './outcome';
+import { persistDeliverables, toSummary } from '@/server/artifacts/service';
+import { renderDesignDocument } from '@/server/email/design-service';
 import { getSkill } from './skill-registry';
 import { classify, understand } from './understand';
 import { verify } from './verifier';
@@ -96,85 +103,37 @@ function claimsFromOutput(output: unknown): ManagerArtifact['claims'] {
  * Control steps (quality control, medical screening) produce findings, not
  * deliverables — their output feeds the quality result instead.
  */
-const CONTROL_TOOLS = new Set(['run_quality_check', 'run_medical_safety_check']);
-
-/** Maps a tool output key onto a human-readable deliverable label. */
-const ENTITY_LABELS: Record<string, string> = {
-  brief: 'Research brief',
-  concept: 'Product concept',
-  contentItem: 'Content item',
-  emailLog: 'Email draft',
-  template: 'Email template',
-  sequence: 'Email sequence',
-  design: 'Email design',
-  lead: 'Lead',
-  client: 'Client',
-  report: 'Report',
-  memo: 'Decision memo',
-  campaignPlan: 'Campaign plan',
-  socialPlan: 'Social plan',
-  communityPlan: 'Community plan',
-};
-
-const ENTITY_KEYS = Object.keys(ENTITY_LABELS);
-
+/**
+ * Structured content of the steps that produced deliverables. It mirrors the
+ * tool output so consumers (reports page, API readers) see the real record.
+ */
 function buildArtifacts(
   steps: readonly PlanStep[],
   results: readonly StepResult[],
   deliverable: DeliverableKind,
+  deliverableStepIds: ReadonlySet<string>,
 ): { artifacts: ManagerArtifact[]; uncertainties: string[] } {
   const artifacts: ManagerArtifact[] = [];
   const uncertainties: string[] = [];
 
   for (const result of results) {
     if (result.status !== 'succeeded' || result.output === null) continue;
+    if (!deliverableStepIds.has(result.stepId)) continue;
     const step = steps.find((candidate) => candidate.id === result.stepId);
     if (!step) continue;
-    if (step.toolName && CONTROL_TOOLS.has(step.toolName)) continue;
 
-    const output = result.output as Record<string, unknown> | null;
-
-    // Explicit uncertainty signals raised by tools.
-    const gaps = output && Array.isArray(output.gaps) ? (output.gaps as string[]) : [];
-    const missing = output && Array.isArray(output.missingData) ? (output.missingData as string[]) : [];
-    const openQuestions =
-      output && Array.isArray(output.openQuestions) ? (output.openQuestions as string[]) : [];
+    const output = result.output as Record<string, unknown>;
+    const gaps = Array.isArray(output.gaps) ? (output.gaps as string[]) : [];
+    const missing = Array.isArray(output.missingData) ? (output.missingData as string[]) : [];
+    const openQuestions = Array.isArray(output.openQuestions) ? (output.openQuestions as string[]) : [];
     uncertainties.push(...gaps, ...missing, ...openQuestions);
-
-    const record = output ?? {};
-    const entityKey = ENTITY_KEYS.find((key) => record[key] !== undefined && record[key] !== null);
-    const entity = (entityKey ? (record[entityKey] as Record<string, unknown>) : record) ?? {};
-
-    const rawTitle =
-      (typeof entity.topic === 'string' && entity.topic) ||
-      (typeof entity.name === 'string' && entity.name) ||
-      (typeof entity.title === 'string' && entity.title) ||
-      (typeof entity.subject === 'string' && entity.subject) ||
-      step.title;
-
-    const label = entityKey ? ENTITY_LABELS[entityKey] : 'Output';
-    const title = `${label}: ${String(rawTitle).slice(0, 160)}`;
-
-    // Merge repeated records for the same deliverable instead of listing them twice.
-    const existing = artifacts.find(
-      (candidate) => candidate.kind === deliverable && candidate.title === title,
-    );
-    const claims = claimsFromOutput(result.output);
-
-    if (existing) {
-      existing.uncertainties = [
-        ...new Set([...existing.uncertainties, ...gaps, ...missing, ...openQuestions]),
-      ];
-      existing.claims = [...existing.claims, ...claims];
-      continue;
-    }
 
     artifacts.push({
       kind: deliverable,
-      title,
+      title: step.title,
       content: result.output,
       uncertainties: [...gaps, ...missing, ...openQuestions],
-      claims,
+      claims: claimsFromOutput(result.output),
     });
   }
 
@@ -357,10 +316,82 @@ export async function runManagerTask(input: OrchestratorInput): Promise<ManagerT
   return executeAndFinalise(snapshot, intent, plan, { actor, repo, taskId, runId, signal: input.signal });
 }
 
+/** Thrown when a resume or answer is not valid for the task's current state. */
+export class ManagerConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ManagerConflictError';
+  }
+}
+
+/** States a user can continue. COMPLETED and in-flight states are refused. */
+const RESUMABLE_STATES = new Set<ManagerTaskSnapshot['state']>([
+  'WAITING_APPROVAL',
+  'NEEDS_INPUT',
+  'BLOCKED',
+  'FAILED',
+]);
+
+/** Answers keyed by clarification field, read from the stored plan. */
+export function answersFromPlan(plan: ManagerPlan): ClarificationAnswers {
+  const answers: ClarificationAnswers = {};
+  for (const clarification of plan.clarifications ?? []) {
+    if (clarification.answer !== null) answers[clarification.field] = clarification.answer;
+  }
+  return answers;
+}
+
+/**
+ * Applies the user's answers to the stored plan and re-plans the same step
+ * structure with real values. Unknown fields are rejected: an answer can only
+ * resolve a question the Manager actually asked.
+ */
+export function applyAnswers(
+  plan: ManagerPlan,
+  request: string,
+  intent: ManagerIntent,
+  answers: Record<string, string>,
+): ManagerPlan {
+  const open = new Map((plan.clarifications ?? []).map((item) => [item.field, item]));
+  const now = nowIso();
+  const existing = new Map((plan.clarifications ?? []).map((item) => [item.field, item]));
+
+  for (const [field, raw] of Object.entries(answers)) {
+    const question = open.get(field);
+    if (!question) {
+      throw new ManagerConflictError(`The Manager did not ask for "${field}". Answer one of the open questions.`);
+    }
+    const value = raw.trim();
+    if (value.length === 0) throw new ManagerConflictError('An answer cannot be empty.');
+    existing.set(field, { ...question, answer: value.slice(0, 2000), answeredAt: now });
+  }
+
+  const understood = understand(request);
+  const rebuilt = buildPlan(intent, understood, answersFromClarificationMap(existing));
+  // Answered questions stay in the plan as history with their answers. Only
+  // questions the rebuilt plan still raises are added.
+  const stillOpen = buildClarifications(rebuilt.steps).filter((item) => !existing.has(item.field));
+  return {
+    ...rebuilt,
+    planner: plan.planner,
+    clarifications: [...existing.values(), ...stillOpen],
+  };
+}
+
+function answersFromClarificationMap(map: Map<string, ManagerClarification>): ClarificationAnswers {
+  const answers: ClarificationAnswers = {};
+  for (const item of map.values()) {
+    if (item.answer !== null) answers[item.field] = item.answer;
+  }
+  return answers;
+}
+
 export async function resumeManagerTask(params: {
   taskId: UUID;
   actor: ActorContext;
   repo: NibrexoRepository;
+  /** User answers to open clarifications, keyed by field. */
+  answers?: Record<string, string>;
 }): Promise<ManagerTaskSnapshot> {
   const { taskId, actor, repo } = params;
   const snapshot = await repo.tasks.get(taskId, actor.organizationId);
@@ -369,6 +400,21 @@ export async function resumeManagerTask(params: {
   }
   if (!snapshot.plan || !snapshot.intent) {
     throw new Error('Task has no plan to resume.');
+  }
+  if (!RESUMABLE_STATES.has(snapshot.state)) {
+    throw new ManagerConflictError(
+      `This task is ${snapshot.state.toLowerCase().replace(/_/g, ' ')} and cannot be resumed.`,
+    );
+  }
+
+  // Answers re-plan the task so the answered steps run with real input.
+  if (params.answers && Object.keys(params.answers).length > 0) {
+    const replanned = applyAnswers(snapshot.plan, snapshot.request, snapshot.intent, params.answers);
+    snapshot.plan = replanned;
+    snapshot.trace = [
+      ...snapshot.trace,
+      trace('plan', `Answers received for ${Object.keys(params.answers).join(', ')}. Plan rebuilt with the supplied input.`),
+    ];
   }
 
   // Drop approval holds that are no longer pending (decided, expired, rejected).
@@ -427,7 +473,7 @@ export async function resumeManagerTask(params: {
 
   const traceLog = [
     ...snapshot.trace,
-    trace('execute', 'Task resumed after an approval decision.'),
+    trace('execute', 'Task resumed.', { previousState: snapshot.state }),
   ];
 
   return executeAndFinalise(
@@ -499,13 +545,30 @@ async function executeAndFinalise(
     }),
   );
 
-  /* ---- Stage 6: VERIFY --------------------------------------------------- */
+  /* ---- Stage 6: DELIVERABLES + VERIFY ------------------------------------ */
   snapshot = await persist(repo, { ...snapshot, state: 'VERIFYING', trace: [...traceLog] });
-  const verification: VerificationResult = verify(plan.steps, outcome.stepResults);
+  const generatedAt = nowIso();
+  const specs = buildDeliverableSpecs({
+    steps: plan.steps,
+    results: outcome.stepResults,
+    request: snapshot.request,
+    generatedAt,
+    renderEmailDesign: (design) => {
+      const document = design.design as Parameters<typeof renderDesignDocument>[1] | undefined;
+      if (!document) return null;
+      return renderDesignDocument(snapshot.organizationId, document, {
+        subject: typeof design.subject === 'string' ? design.subject : undefined,
+      }).html;
+    },
+  });
+  const verification: VerificationResult = verify(plan.steps, outcome.stepResults, {
+    deliverableCount: specs.length,
+  });
   traceLog.push(
-    trace('verify', verification.ok ? 'Verification passed.' : 'Verification reported issues.', {
+    trace('verify', verification.ok ? 'Verification passed.' : 'Verification did not pass.', {
       checks: verification.checks.length,
       issues: verification.issues.length,
+      deliverables: specs.length,
     }),
   );
 
@@ -517,33 +580,78 @@ async function executeAndFinalise(
     }),
   );
 
-  /* ---- Stage 8-9: DELIVER + NEXT BEST ACTION ----------------------------- */
+  /* ---- Decide the truthful end state ------------------------------------ */
   const approvals = (await repo.approvals.list(snapshot.organizationId, { limit: 200 })).filter(
     (approval) => approval.task_id === snapshot.id,
   );
-
-  const { artifacts, uncertainties } = buildArtifacts(plan.steps, outcome.stepResults, intent.deliverable);
-
   const pendingApprovals = approvals.filter((approval) => approval.status === 'pending');
 
-  // A task with an undecided approval is never reported as complete, even if
-  // the remaining independent steps finished.
-  const state: ManagerTaskSnapshot['state'] =
-    outcome.haltedOnApproval || pendingApprovals.length > 0
-      ? 'WAITING_APPROVAL'
-      : outcome.haltedOnError || quality?.blocking
-        ? 'FAILED'
-        : 'COMPLETED';
+  let decided = deriveOutcome({
+    steps: plan.steps,
+    results: outcome.stepResults,
+    pendingApprovalCount: pendingApprovals.length,
+    haltedOnApproval: outcome.haltedOnApproval ? { stepId: outcome.haltedOnApproval.stepId } : null,
+    haltedOnError: outcome.haltedOnError,
+    verification,
+    quality,
+    deliverableCount: specs.length,
+  });
+
+  /* ---- Stage 8: DELIVER — persist files only for verified completion ---- */
+  let deliverables: ManagerArtifactRecord[] = [];
+  if (decided.state === 'COMPLETED') {
+    try {
+      deliverables = await persistDeliverables({
+        repo,
+        actor,
+        taskId: snapshot.id,
+        specs,
+      });
+      for (const record of deliverables) {
+        await writeAudit(repo, actor, {
+          action: 'manager.artifact.created',
+          entityType: 'manager_task',
+          entityId: snapshot.id,
+          metadata: { artifactId: record.id, kind: record.kind, format: record.format, sizeBytes: record.size_bytes },
+        });
+      }
+    } catch (error) {
+      // A deliverable that cannot be stored is a failure, never a success.
+      const message = error instanceof Error ? error.message : 'Unknown storage error.';
+      decided = {
+        state: 'FAILED',
+        reasons: [
+          {
+            code: 'ARTIFACT_WRITE_FAILED',
+            stepId: null,
+            message: `The deliverable could not be saved: ${message}. Retry the task after checking the workspace storage.`,
+          },
+        ],
+        questions: [],
+      };
+      deliverables = [];
+    }
+  }
+  const state = decided.state;
+
+  const deliverableStepIds = new Set(specs.map((spec) => spec.stepId));
+  const { artifacts, uncertainties } = buildArtifacts(
+    plan.steps,
+    outcome.stepResults,
+    intent.deliverable,
+    state === 'COMPLETED' ? deliverableStepIds : new Set<string>(),
+  );
 
   const result: ManagerResult = {
     taskId: snapshot.id,
-    state:
-      state === 'WAITING_APPROVAL' ? 'WAITING_APPROVAL' : state === 'FAILED' ? 'FAILED' : 'COMPLETED',
-    summary: buildSummary(intent, plan, outcome.stepResults, quality, state),
+    state,
+    summary: buildSummary(intent, plan, outcome.stepResults, quality, state, decided.reasons.length),
     artifacts: artifacts.map((artifact) => ({
       ...artifact,
       uncertainties: [...new Set([...artifact.uncertainties, ...uncertainties])],
     })),
+    deliverables: deliverables.map(toSummary),
+    reasons: decided.reasons,
     quality,
     verification,
     nextBestAction: nextBestActions(plan, outcome.stepResults, quality, pendingApprovals),
@@ -562,29 +670,41 @@ async function executeAndFinalise(
     completedAt: nowIso(),
   };
 
-  traceLog.push(trace('deliver', `Task ${state}.`, { summary: result.summary }));
-  traceLog.push(
-    trace('next_best_action', `${result.nextBestAction.length} recommended follow-up action(s).`),
-  );
+  traceLog.push(trace('deliver', `Task ${state}.`, { summary: result.summary, reasons: decided.reasons.map((reason) => reason.code) }));
+  traceLog.push(trace('next_best_action', `${result.nextBestAction.length} recommended follow-up action(s).`));
 
+  const firstBlocking = decided.reasons[0];
   const finalSnapshot = await persist(repo, {
     ...snapshot,
     state,
     stepResults: outcome.stepResults,
     trace: traceLog,
     result,
-    error: outcome.haltedOnError ? outcome.haltedOnError.issue.message : null,
+    error: state === 'COMPLETED' || state === 'WAITING_APPROVAL' || state === 'NEEDS_INPUT' ? null : firstBlocking?.message ?? null,
   });
 
   await writeAudit(repo, actor, {
-    action: state === 'COMPLETED' ? 'manager.task.completed' : 'manager.task.failed',
+    action: AUDIT_ACTION_BY_STATE[state],
     entityType: 'manager_task',
     entityId: snapshot.id,
-    metadata: { state, aiEnabled: result.aiEnabled },
+    metadata: { state, aiEnabled: result.aiEnabled, reasons: decided.reasons.map((reason) => reason.code), deliverables: deliverables.length },
   });
 
   return finalSnapshot;
 }
+
+const AUDIT_ACTION_BY_STATE: Record<ManagerTaskSnapshot['state'], string> = {
+  RECEIVED: 'manager.task.queued',
+  PLANNING: 'manager.task.planning',
+  WAITING_APPROVAL: 'manager.task.waiting_approval',
+  NEEDS_INPUT: 'manager.task.needs_input',
+  BLOCKED: 'manager.task.blocked',
+  EXECUTING: 'manager.task.executing',
+  VERIFYING: 'manager.task.verifying',
+  COMPLETED: 'manager.task.completed',
+  FAILED: 'manager.task.failed',
+  CANCELLED: 'manager.task.cancelled',
+};
 
 function buildSummary(
   intent: ManagerIntent,
@@ -592,28 +712,40 @@ function buildSummary(
   results: readonly StepResult[],
   quality: QualityControlResult | null,
   state: ManagerTaskSnapshot['state'],
+  reasonCount: number,
 ): string {
   const succeeded = results.filter((result) => result.status === 'succeeded').length;
   const skipped = results.filter((result) => result.status === 'skipped').length;
   const awaiting = results.filter((result) => result.status === 'awaiting_approval').length;
-  const failed = results.filter((result) => result.status === 'failed').length;
+  const failed = results.filter((result) => result.status === 'failed' || result.status === 'denied').length;
 
   const parts = [
     `Classified as ${intent.primary.replace(/_/g, ' ')} (confidence ${(intent.confidence * 100).toFixed(0)}%).`,
     `Planned ${plan.steps.length} step(s) across ${plan.skills.length} skill(s).`,
-    `${succeeded} executed, ${skipped} skipped for missing input, ${awaiting} awaiting approval, ${failed} failed.`,
+    `${succeeded} executed, ${skipped} waiting for input, ${awaiting} awaiting approval, ${failed} failed or denied.`,
   ];
 
   if (quality) parts.push(`Quality score ${quality.score}/100${quality.blocking ? ' with blocking findings' : ''}.`);
 
-  if (state === 'WAITING_APPROVAL') {
-    parts.push('Work is paused until the pending approval is decided. No external action has been taken.');
-  } else if (state === 'FAILED') {
-    parts.push('The task stopped before completion; see the reported issues.');
-  } else {
-    parts.push('Delivered. Prepared actions are marked as prepared, not completed.');
+  switch (state) {
+    case 'COMPLETED':
+      parts.push('Verified and delivered. The deliverables below were generated from the executed output.');
+      break;
+    case 'NEEDS_INPUT':
+      parts.push(`Paused: ${reasonCount} question(s) must be answered before the work can finish. Nothing was guessed.`);
+      break;
+    case 'BLOCKED':
+      parts.push('Blocked: a permission or configuration issue must be resolved before the work can continue.');
+      break;
+    case 'WAITING_APPROVAL':
+      parts.push('Paused until the pending approval is decided. No external action has been taken.');
+      break;
+    case 'FAILED':
+      parts.push('Not completed. See the reasons below. Failures are reported, never shown as success.');
+      break;
+    default:
+      break;
   }
-
   return parts.join(' ');
 }
 
