@@ -88,6 +88,7 @@ export type DeliverableKind =
   | 'outreach_draft'
   | 'email_draft'
   | 'email_sequence'
+  | 'email_design'
   | 'social_plan'
   | 'community_plan'
   | 'operations_plan'

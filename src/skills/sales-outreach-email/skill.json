@@ -1,12 +1,12 @@
 {
   "id": "sales-outreach-email",
   "name": "Sales / Outreach / Email",
-  "description": "Prepares sales plans, outreach sequences and client emails. Drafting and personalization are internal; sending is an external high-risk action that always stops for approval and is only executed through a configured provider adapter.",
+  "description": "Prepares sales plans, outreach sequences, client emails and visual email designs in the studio. Drafting and personalization are internal; sending is an external high-risk action that always stops for approval and is only executed through a configured provider adapter.",
   "workTypes": ["sales", "outreach", "email_workflow"],
   "modules": ["email", "clients", "ai"],
-  "tools": ["create_email_template", "list_email_templates", "prepare_email", "create_email_sequence", "send_email", "create_client", "list_clients"],
+  "tools": ["create_email_template", "list_email_templates", "prepare_email", "create_email_sequence", "send_email", "create_client", "list_clients", "list_email_design_starters", "create_email_design", "list_email_designs", "update_email_design", "render_email_design", "promote_email_design"],
   "knowledge": ["brand-voice.json", "claim-policy.json"],
-  "outputs": ["outreach_draft", "email_draft", "email_sequence", "sales_plan"],
+  "outputs": ["outreach_draft", "email_draft", "email_sequence", "sales_plan", "email_design"],
   "maxRisk": "high",
   "version": "1.0"
 }

@@ -122,14 +122,18 @@ function templates(
     case 'visual_communication':
     case 'marketing': {
       if (intent.primary === 'visual_communication') {
-        steps.push({
-          title: 'Create a visual concept specification',
-          rationale: 'Visual work starts with message hierarchy, formats and asset list.',
-          skillId: 'visual-content',
-          toolName: 'create_visual_concept',
-          input: { title: topic.slice(0, 200), purpose: request, formats: ['social-square'], messageHierarchy: [topic] },
-          stage: 'execute',
-        });
+        if (wantsDesignedEmail(request)) {
+          steps.push(emailDesignStep(request, topic, intent, steps));
+        } else {
+          steps.push({
+            title: 'Create a visual concept specification',
+            rationale: 'Visual work starts with message hierarchy, formats and asset list.',
+            skillId: 'visual-content',
+            toolName: 'create_visual_concept',
+            input: { title: topic.slice(0, 200), purpose: request, formats: ['social-square'], messageHierarchy: [topic] },
+            stage: 'execute',
+          });
+        }
       }
       steps.push({
         title: 'Draft the content asset',
@@ -280,19 +284,38 @@ function templates(
     case 'sales':
     case 'outreach':
     case 'email_workflow': {
-      steps.push({
-        title: 'Draft the email template',
-        rationale: 'Standardizes the message and validates variables before personalization.',
-        skillId: 'sales-outreach-email',
-        toolName: 'create_email_template',
-        input: {
-          name: topic.slice(0, 200),
-          category: intent.primary === 'outreach' ? 'outreach' : 'sales',
-          subject: topic.slice(0, 200),
-          body: `Hi {{contact.name}},\n\n${request}\n\nKind regards,\n{{user.name}}`,
-        },
-        stage: 'execute',
-      });
+      const designedEmail = wantsDesignedEmail(request);
+
+      if (designedEmail) {
+        steps.push(emailDesignStep(request, topic, intent, steps));
+
+        if (wantsPromotion(request)) {
+          steps.push({
+            title: 'Promote the design into a sending template',
+            rationale:
+              'The rendered design is written into the existing email_templates table as a draft. Sending still requires email:send and the existing approval gates.',
+            skillId: 'sales-outreach-email',
+            toolName: 'promote_email_design',
+            input: { designId: stepRef(`step-${steps.length}`, 'design.id'), status: 'draft' },
+            stage: 'execute',
+          });
+        }
+      } else {
+        steps.push({
+          title: 'Draft the email template',
+          rationale: 'Standardizes the message and validates variables before personalization.',
+          skillId: 'sales-outreach-email',
+          toolName: 'create_email_template',
+          input: {
+            name: topic.slice(0, 200),
+            category: intent.primary === 'outreach' ? 'outreach' : 'sales',
+            subject: topic.slice(0, 200),
+            body: `Hi {{contact.name}},\n\n${request}\n\nKind regards,\n{{user.name}}`,
+          },
+          stage: 'execute',
+        });
+      }
+
       const prepareStepId = `step-${steps.length + 1}`;
       steps.push({
         title: 'Prepare the personalized email',
@@ -427,6 +450,67 @@ function templates(
   });
 
   return { steps, openQuestions };
+}
+
+/**
+ * Builds the visual-studio step for a request that asks for a designed email.
+ * Shared by the email and visual work types so "design a launch email" and
+ * "create a premium product-launch email with a banner and three product cards"
+ * both land in the same editable draft.
+ */
+function emailDesignStep(
+  request: string,
+  topic: string,
+  intent: ManagerIntent,
+  steps: StepDraft[],
+): StepDraft {
+  return {
+    title: 'Build the visual email design',
+    rationale:
+      'The studio renders a real, editable design into responsive table-based HTML with inline CSS, a plain-text alternative and validation. It is saved as a draft — nothing is sent and no template is activated.',
+    skillId: 'sales-outreach-email',
+    toolName: 'create_email_design',
+    input: {
+      name: topic.slice(0, 120),
+      category: intent.primary === 'outreach' ? 'outreach' : 'campaign',
+      subject: topic.slice(0, 300),
+      starterId: starterDesignFor(request),
+      status: 'draft',
+    },
+    stage: 'execute',
+    dependsOn: steps.length > 0 ? [`step-${steps.length}`] : [],
+  };
+}
+
+/**
+ * Detects a request for a *designed* email (the Phase 16 visual studio) rather
+ * than a plain subject/body template.
+ */
+function wantsDesignedEmail(request: string): boolean {
+  return /\b(design|designed|studio|visual|banner|hero|newsletter|campaign|html email|email design|product launch|launch email|promotional email|brand header|footer|product card|gallery|cta|drag)\b/.test(
+    request.toLowerCase(),
+  );
+}
+
+/** Maps the wording of a request onto one of the editable starter designs. */
+function starterDesignFor(request: string): string {
+  const lower = request.toLowerCase();
+  if (/\b(welcome|onboard|getting started|sign ?up)\b/.test(lower)) return 'starter-welcome';
+  if (/\b(newsletter|digest|weekly|monthly update)\b/.test(lower)) return 'starter-newsletter';
+  if (/\b(product launch|launch|new product|release)\b/.test(lower)) return 'starter-product-launch';
+  if (/\b(promo|promotion|discount|sale|offer|voucher|deal)\b/.test(lower)) return 'starter-promo';
+  if (/\b(announce|announcement|notice)\b/.test(lower)) return 'starter-announcement';
+  if (/\b(client update|project update|progress|deliverable|report to the client)\b/.test(lower)) {
+    return 'starter-client-update';
+  }
+  return 'starter-newsletter';
+}
+
+/** Detects an explicit request to turn a design into a sendable template. */
+function wantsPromotion(request: string): boolean {
+  return /\b(promote|use it to send|activate|make it sendable|turn it into a template|make it a template)\b/.test(
+    request.toLowerCase(),
+  );
 }
 
 /** Detects an explicit request for an external action. */

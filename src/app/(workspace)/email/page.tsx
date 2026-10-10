@@ -57,8 +57,11 @@ export default async function EmailWorkspacePage({
         description="Templates, composer, and delivery history — tenant-scoped and permission-gated. Draft/archived templates are never accidentally selected for sending."
         actions={
           <div className="flex flex-wrap gap-2">
+            <Link className="btn-primary" href="/email/studio">
+              Open design studio <ArrowRightIcon size={15} />
+            </Link>
             <Link className="btn-secondary" href="/email/templates">
-              Browse templates <ArrowRightIcon size={15} />
+              Browse templates
             </Link>
             <Link className="btn-secondary" href="/emails">
               Legacy view
@@ -198,6 +201,30 @@ export default async function EmailWorkspacePage({
                 ))}
               </ul>
             )}
+          </Card>
+
+          <Card
+            title="Visual design studio"
+            action={<Badge tone="success">New</Badge>}
+          >
+            <p className="text-xs leading-5 text-slate-400">
+              Drag-and-drop blocks (header, hero, product catalogue, gallery, video thumbnail, CTA, social links, footer) rendered
+              to responsive, table-based email HTML with inline CSS, a plain-text alternative, desktop/mobile preview and a built-in
+              test-send workflow. Designs are saved as drafts and promoted into sending templates only when they are ready.
+            </p>
+            <ul className="mt-3 space-y-1.5 text-xs text-slate-400">
+              <li>· Autosave, undo/redo, duplicate, and save-as-draft on every design.</li>
+              <li>· Brand defaults (logo, colours, typography, header/footer, button style, saved sections) apply to new designs.</li>
+              <li>· Content Library assets stay private — they are served through signed, expiring URLs.</li>
+            </ul>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Link className="btn-primary text-xs" href="/email/studio">
+                Open studio
+              </Link>
+              <Link className="btn-secondary text-xs" href="/email/brand">
+                Brand &amp; design system
+              </Link>
+            </div>
           </Card>
 
           <Card title="Search & filters">

@@ -9,6 +9,15 @@
 import { z } from 'zod';
 import { createEmailProvider } from '@/server/integrations/email/provider';
 import type { EmailStatus } from '@/types/domain';
+import {
+  createDesign,
+  listDesigns,
+  promoteDesignToTemplate,
+  renderDesign,
+  renderDesignDocument,
+  updateDesign,
+} from '@/server/email/design-service';
+import { STARTER_TEMPLATES, getStarterTemplate, starterVariables } from '@/server/email/starter-templates';
 import { defineTool } from './define';
 
 const TEMPLATE_VARIABLE = /\{\{\s*([a-zA-Z0-9_.]+)\s*\}\}/g;
@@ -241,10 +250,239 @@ export const sendEmailTool = defineTool({
   },
 });
 
+
+/* -------------------------------------------------------------------------- */
+/* Phase 16 — visual email design studio tools                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Unwraps a `ServiceResult` for the tool boundary. Tools throw, so a failed
+ * service call surfaces as a structured Manager issue instead of a fabricated
+ * success (PDF #08 §14).
+ */
+function unwrap<T>(result: { ok: true; data: T } | { ok: false; error: { code: string; message: string; severity: 'info' | 'warning' | 'error'; retryable: boolean; errorClass: string } }): T {
+  if (result.ok) return result.data;
+  const error = new Error(`${result.error.code}: ${result.error.message}`);
+  error.name = 'ToolError';
+  throw error;
+}
+
+export const listEmailDesignStartersTool = defineTool({
+  name: 'list_email_design_starters',
+  description:
+    'List the editable starter designs of the email studio (welcome, newsletter, product launch, promotional, announcement, client update). Use one as the base for create_email_design.',
+  permission: { module: 'email', action: 'view' },
+  risk: 'low',
+  inputSchema: z.object({}),
+  async execute(_input) {
+    return STARTER_TEMPLATES.map((template) => ({
+      id: template.id,
+      name: template.name,
+      description: template.description,
+      category: template.category,
+      subject: template.subject,
+      blocks: template.design.blocks.map((block) => block.type),
+      variables: starterVariables(template),
+    }));
+  },
+});
+
+export const createEmailDesignTool = defineTool({
+  name: 'create_email_design',
+  description:
+    'Create an editable visual email design (drag-and-drop studio) and save it as a draft. Provide a starterId to build on a polished starter, or an explicit design document. Nothing is sent and no template is activated.',
+  permission: { module: 'email', action: 'create' },
+  risk: 'low',
+  inputSchema: z.object({
+    name: z.string().min(1).max(120),
+    category: z.string().min(1).max(80).default('general'),
+    subject: z.string().min(1).max(300),
+    starterId: z.string().max(80).optional(),
+    design: z.unknown().optional(),
+    status: z.enum(['draft', 'active']).optional(),
+  }),
+  async execute(input, ctx) {
+    const starter = input.starterId ? getStarterTemplate(input.starterId) : undefined;
+    if (input.starterId && !starter) {
+      throw new Error(`Unknown starter design "${input.starterId}". Use list_email_design_starters to see the available ids.`);
+    }
+    if (!starter && input.design === undefined) {
+      throw new Error('Provide either a starterId or an explicit design document.');
+    }
+
+    const baseDocument = starter ? starter.design : input.design;
+    const created = await createDesign(
+      ctx.actor,
+      ctx.repo,
+      {
+        name: input.name,
+        category: input.category,
+        subject: input.subject,
+        design: baseDocument,
+        ...(input.status ? { status: input.status } : { status: 'draft' as const }),
+        source: starter ? 'starter' : 'manager',
+      } as Parameters<typeof createDesign>[2],
+    );
+    const design = unwrap(created);
+
+    // Rendered without an asset base URL: the studio preview, the test send and
+    // promotion all build signed asset URLs from the real request origin.
+    const rendered = renderDesignDocument(ctx.organizationId, design.design, { baseUrl: null });
+
+    return {
+      design,
+      blocks: design.design.blocks.map((block) => block.type),
+      status: design.status,
+      note:
+        design.status === 'draft'
+          ? 'Saved as a draft. It is not selectable for sending until it is promoted to an active template.'
+          : 'Saved and active. Sending still requires email:send and the existing approval gates.',
+      validation: rendered.validation,
+    };
+  },
+});
+
+export const listEmailDesignsTool = defineTool({
+  name: 'list_email_designs',
+  description: 'List the organization\'s saved email designs with their status, source and block counts.',
+  permission: { module: 'email', action: 'view' },
+  risk: 'low',
+  inputSchema: z.object({
+    status: z.enum(['draft', 'active', 'archived']).optional(),
+    search: z.string().max(200).optional(),
+    limit: z.number().int().min(1).max(100).default(25),
+  }),
+  async execute(input, ctx) {
+    const result = await listDesigns(ctx.actor, ctx.repo, {
+      limit: input.limit,
+      offset: 0,
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.search ? { search: input.search } : {}),
+    });
+    const data = unwrap(result);
+    return data.designs.map((design) => ({
+      id: design.id,
+      name: design.name,
+      category: design.category,
+      subject: design.subject,
+      status: design.status,
+      source: design.source,
+      templateId: design.template_id,
+      blocks: design.design.blocks.map((block) => block.type),
+      updatedAt: design.updated_at,
+    }));
+  },
+});
+
+export const updateEmailDesignTool = defineTool({
+  name: 'update_email_design',
+  description:
+    'Update a saved email design (name, category, subject, status or the design document itself). Designs stay editable drafts until they are promoted.',
+  permission: { module: 'email', action: 'edit' },
+  risk: 'low',
+  inputSchema: z.object({
+    designId: z.string().uuid(),
+    name: z.string().min(1).max(120).optional(),
+    category: z.string().min(1).max(80).optional(),
+    subject: z.string().min(1).max(300).optional(),
+    status: z.enum(['draft', 'active', 'archived']).optional(),
+    design: z.unknown().optional(),
+  }),
+  async execute(input, ctx) {
+    const result = await updateDesign(ctx.actor, ctx.repo, input.designId, {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.category !== undefined ? { category: input.category } : {}),
+      ...(input.subject !== undefined ? { subject: input.subject } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.design !== undefined ? { design: input.design } : {}),
+    } as Parameters<typeof updateDesign>[3]);
+    const design = unwrap(result);
+    return { design, blocks: design.design.blocks.map((block) => block.type), status: design.status };
+  },
+});
+
+export const renderEmailDesignTool = defineTool({
+  name: 'render_email_design',
+  description:
+    'Render a saved email design to responsive table-based HTML, a plain-text alternative and a validation report. Inspection only — nothing is sent.',
+  permission: { module: 'email', action: 'view' },
+  risk: 'low',
+  inputSchema: z.object({
+    designId: z.string().uuid(),
+    includeHtml: z.boolean().default(true),
+    includeText: z.boolean().default(true),
+  }),
+  async execute(input, ctx) {
+    const result = await renderDesign(ctx.actor, ctx.repo, input.designId, { baseUrl: null });
+    const rendered = unwrap(result);
+    return {
+      designId: rendered.designId,
+      designName: rendered.designName,
+      status: rendered.status,
+      subject: rendered.subject,
+      preheader: rendered.preheader,
+      unresolvedVariables: rendered.unresolvedVariables,
+      validation: rendered.validation,
+      ...(input.includeHtml ? { html: rendered.html } : {}),
+      ...(input.includeText ? { text: rendered.text } : {}),
+    };
+  },
+});
+
+export const promoteEmailDesignTool = defineTool({
+  name: 'promote_email_design',
+  description:
+    'Promote a studio design into the existing email_templates table so the composer, sequences and send pipeline can use it. The template is created as a draft unless an explicit status is given; sending still requires email:send and approval.',
+  permission: { module: 'email', action: 'create' },
+  risk: 'medium',
+  inputSchema: z.object({
+    designId: z.string().uuid(),
+    name: z.string().max(100).optional(),
+    category: z.string().max(80).optional(),
+    status: z.enum(['draft', 'active']).optional(),
+  }),
+  async execute(input, ctx) {
+    const result = await promoteDesignToTemplate(ctx.actor, ctx.repo, input.designId, {
+      ...(input.name !== undefined ? { name: input.name } : {}),
+      ...(input.category !== undefined ? { category: input.category } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+    } as Parameters<typeof promoteDesignToTemplate>[3]);
+    const { design, template } = unwrap(result);
+    return {
+      designId: design.id,
+      designStatus: design.status,
+      template: {
+        id: template.id,
+        name: template.name,
+        category: template.category,
+        status: template.status ?? (template.archived ? 'archived' : 'active'),
+        bodyLength: template.body.length,
+      },
+      note:
+        'The rendered design was written into the existing email_templates table. Promotion never activates a template for sending by itself.',
+    };
+  },
+});
+
+export const emailStudioTools = [
+  listEmailDesignStartersTool,
+  createEmailDesignTool,
+  listEmailDesignsTool,
+  updateEmailDesignTool,
+  renderEmailDesignTool,
+  promoteEmailDesignTool,
+];
+
 export const emailTools = [
   createEmailTemplateTool,
   listEmailTemplatesTool,
   prepareEmailTool,
   createEmailSequenceTool,
   sendEmailTool,
+  listEmailDesignStartersTool,
+  createEmailDesignTool,
+  listEmailDesignsTool,
+  updateEmailDesignTool,
+  renderEmailDesignTool,
+  promoteEmailDesignTool,
 ];

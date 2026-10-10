@@ -193,6 +193,8 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
     emailTemplates: collection('email_templates'),
     emailLogs: collection('email_logs'),
     emailSequences: collection('email_sequences'),
+    emailDesigns: collection('email_designs'),
+    emailBrandProfiles: collection('email_brand_profiles'),
     socialAccounts: collection('social_accounts'),
     socialCredentials: collection('social_credentials'),
     socialOauthStates: collection('social_oauth_states'),
