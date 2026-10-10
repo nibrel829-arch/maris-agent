@@ -2,9 +2,10 @@ import { NextResponse } from 'next/server';
 import { errorResponse } from '@/server/api/handler';
 import { getJobRepository, getRequestRepository } from '@/server/db';
 import type { NibrexoRepository } from '@/server/db/types';
-import { getRequestMediaStorage } from '@/server/content/storage';
+import { getJobMediaStorage } from '@/server/content/storage';
 import { filenameFromStoragePath } from '@/server/content/service';
-import { verifyAssetToken } from '@/server/email/asset-url';
+import { isOrganizationIdShape, verifyAssetToken } from '@/server/email/asset-url';
+import { MEDIA_RESPONSE_SECURITY_HEADERS } from '@/server/content/media-headers';
 import { mediaIdSchema } from '@/server/content/validation';
 
 export const dynamic = 'force-dynamic';
@@ -48,7 +49,7 @@ export async function GET(request: Request, extra: RouteParams): Promise<NextRes
   const exp = url.searchParams.get('exp');
   const sig = url.searchParams.get('sig');
 
-  if (!organizationId) {
+  if (!organizationId || !isOrganizationIdShape(organizationId)) {
     return jsonError('INVALID_INPUT', 'A signed organization parameter is required.', 400);
   }
 
@@ -77,7 +78,12 @@ export async function GET(request: Request, extra: RouteParams): Promise<NextRes
     return jsonError('ASSET_NOT_FOUND', 'The referenced media asset is not available.', 404);
   }
 
-  const storageResult = await getRequestMediaStorage();
+  // A recipient's mail client has no Nibrexo session, so the session-bound
+  // storage client (RLS, anon role) would deny every download. The token check
+  // and the organization-filtered row read above are the authorization; the
+  // bytes are then fetched by the server-only storage client, as the publish
+  // sweeper does. The storage path is never taken from the caller.
+  const storageResult = await getJobMediaStorage();
   if (!storageResult.ok) return errorResponse(storageResult.error);
 
   const resolved = await storageResult.data.download(media.storage_path).catch(() => null);
@@ -96,7 +102,7 @@ export async function GET(request: Request, extra: RouteParams): Promise<NextRes
       'Content-Length': String(resolved.bytes.byteLength),
       'Content-Disposition': `inline; filename="${safeName}"`,
       'Cache-Control': `private, max-age=${remaining}`,
-      'X-Content-Type-Options': 'nosniff',
+      ...MEDIA_RESPONSE_SECURITY_HEADERS,
     },
   });
 }

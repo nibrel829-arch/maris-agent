@@ -2,6 +2,7 @@ import { z } from 'zod';
 import type { z as Zod } from 'zod';
 import { parseBody, withApiContext } from '@/server/api/handler';
 import { runManagerTask } from '@/server/manager/orchestrator';
+import { requireAi } from '@/server/manager/route-guards';
 
 const createSchema = z.object({
   request: z.string().min(3, 'Describe what you need in at least 3 characters.').max(4000),
@@ -11,8 +12,11 @@ const listSchema = z.object({ limit: z.coerce.number().int().min(1).max(100).def
 
 export const dynamic = 'force-dynamic';
 
-/** POST /api/manager/tasks — hand a request to the NIBREXO CEO / Manager. */
+/** POST /api/manager/tasks — hand a request to the NIBREXO CEO / Manager (ai:create). */
 export const POST = withApiContext(async ({ actor, repo }, request) => {
+  const denied = requireAi(actor, 'create');
+  if (denied) return denied;
+
   const body = await parseBody(request, createSchema as unknown as Zod.ZodTypeAny);
   if (!body.ok) {
     return {
@@ -37,8 +41,11 @@ export const POST = withApiContext(async ({ actor, repo }, request) => {
   return { ok: true as const, data: snapshot, status: 201 };
 });
 
-/** GET /api/manager/tasks — recent Manager tasks for this organization. */
+/** GET /api/manager/tasks — recent Manager tasks for this organization (ai:view). */
 export const GET = withApiContext(async ({ actor, repo }, request) => {
+  const denied = requireAi(actor, 'view');
+  if (denied) return denied;
+
   const url = new URL(request.url);
   const limit = listSchema.safeParse({ limit: url.searchParams.get('limit') ?? undefined });
   const tasks = await repo.tasks.list(actor.organizationId, {

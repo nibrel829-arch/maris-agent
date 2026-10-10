@@ -234,6 +234,18 @@ export interface PlanStep {
    * The step is skipped (not guessed) and surfaced as an open question.
    */
   clarification: string | null;
+  /** Input key that the user's answer fills (e.g. `targetCustomer`). */
+  clarificationField?: string | null;
+}
+
+/** A question the user must answer before a skipped step can run (Phase 17). */
+export interface ManagerClarification {
+  id: string;
+  stepId: string;
+  field: string;
+  question: string;
+  answer: string | null;
+  answeredAt: string | null;
 }
 
 export interface ManagerPlan {
@@ -247,6 +259,8 @@ export interface ManagerPlan {
   openQuestions: string[];
   /** Which planner produced this: deterministic rules or the AI layer. */
   planner: 'deterministic' | 'ai';
+  /** Questions the user must answer. Stored with the plan (no extra table). */
+  clarifications?: ManagerClarification[];
 }
 
 /* -------------------------------------------------------------------------- */
@@ -348,9 +362,14 @@ export interface ManagerArtifact {
 
 export interface ManagerResult {
   taskId: UUID;
-  state: 'COMPLETED' | 'FAILED' | 'WAITING_APPROVAL' | 'CANCELLED';
+  state: 'COMPLETED' | 'FAILED' | 'BLOCKED' | 'NEEDS_INPUT' | 'WAITING_APPROVAL' | 'CANCELLED';
   summary: string;
+  /** Structured content of the deliverable-producing steps (kept for consumers). */
   artifacts: ManagerArtifact[];
+  /** Stored files generated from the run. Empty unless the task is COMPLETED. */
+  deliverables: Array<Omit<ManagerArtifactRecord, 'content_base64'>>;
+  /** Why the task is in its state: each reason names a step and an actionable message. */
+  reasons: Array<{ code: string; stepId: string | null; message: string }>;
   quality: QualityControlResult | null;
   verification: VerificationResult | null;
   nextBestAction: NextBestAction[];
@@ -381,15 +400,62 @@ export interface ManagerTraceEntry {
 /* Persistence contract                                                        */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Persisted assignment states. Phase 17 adds `NEEDS_INPUT` (paused on a user
+ * answer) and `BLOCKED` (cannot proceed: missing permission or unconfigured
+ * provider). `RECEIVED` is presented as "Queued", `PLANNING`/`EXECUTING`/
+ * `VERIFYING` as "Running". Only `COMPLETED` means verified delivery.
+ */
 export type ManagerTaskRecordState =
   | 'RECEIVED'
   | 'PLANNING'
   | 'WAITING_APPROVAL'
+  | 'NEEDS_INPUT'
+  | 'BLOCKED'
   | 'EXECUTING'
   | 'VERIFYING'
   | 'COMPLETED'
   | 'FAILED'
   | 'CANCELLED';
+
+/** Human labels used by every surface (workspace, cockpit, API consumers). */
+export const TASK_STATE_LABEL: Record<ManagerTaskRecordState, string> = {
+  RECEIVED: 'Queued',
+  PLANNING: 'Running',
+  EXECUTING: 'Running',
+  VERIFYING: 'Running',
+  WAITING_APPROVAL: 'Awaiting approval',
+  NEEDS_INPUT: 'Needs input',
+  BLOCKED: 'Blocked',
+  COMPLETED: 'Completed',
+  FAILED: 'Failed',
+  CANCELLED: 'Cancelled',
+};
+
+/* -------------------------------------------------------------------------- */
+/* Deliverables (Phase 17)                                                     */
+/* -------------------------------------------------------------------------- */
+
+export type ArtifactFormat = 'docx' | 'csv' | 'html' | 'txt';
+
+export interface ManagerArtifactRecord {
+  id: UUID;
+  organization_id: UUID;
+  task_id: UUID;
+  step_id: string | null;
+  kind: DeliverableKind;
+  format: ArtifactFormat;
+  title: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  sha256: string;
+  /** Base64 file bytes. Omitted from list responses. */
+  content_base64: string;
+  created_by: UUID | null;
+  created_at: string;
+  updated_at?: string;
+}
 
 export interface ManagerTaskSnapshot {
   id: UUID;

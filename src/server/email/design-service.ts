@@ -35,6 +35,7 @@ import {
   type RenderedEmail,
 } from '@/types/email-design';
 import {
+  AssetSigningUnavailableError,
   buildSignedAssetUrl,
   resolveRequestOrigin,
   type SignedAssetUrl,
@@ -103,13 +104,21 @@ export function createAssetUrlResolver(
   const base = options.baseUrl?.trim();
   if (!base) return () => null;
   return (mediaId: string) => {
-    const signed: SignedAssetUrl = buildSignedAssetUrl({
-      mediaId,
-      organizationId,
-      baseUrl: base,
-      ...(options.ttlSeconds ? { ttlSeconds: options.ttlSeconds } : {}),
-    });
-    return signed.url;
+    try {
+      const signed: SignedAssetUrl = buildSignedAssetUrl({
+        mediaId,
+        organizationId,
+        baseUrl: base,
+        ...(options.ttlSeconds ? { ttlSeconds: options.ttlSeconds } : {}),
+      });
+      return signed.url;
+    } catch (error) {
+      // No durable signing key (production without configuration): emit no
+      // image URL, so the block renders its colour placeholder rather than a
+      // link that cannot be verified or a public bucket URL.
+      if (error instanceof AssetSigningUnavailableError) return null;
+      throw error;
+    }
   };
 }
 

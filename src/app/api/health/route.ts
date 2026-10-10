@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { publicEnv, serverEnv } from '@/lib/env';
 import { listAdapters } from '@/server/integrations/social/adapter';
 import { createEmailProvider } from '@/server/integrations/email/provider';
+import { appUrlStatus, assetSigningSource } from '@/server/email/asset-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -29,6 +30,10 @@ export async function GET(): Promise<NextResponse> {
       aiModel: env.aiEnabled ? env.aiModel : null,
       emailProvider: createEmailProvider().name,
       emailConfigured: createEmailProvider().isConfigured(),
+      // Names and states only: which key signs email asset links, and whether
+      // NIBREXO_APP_URL is unset / valid / invalid. Never the values.
+      emailAssetSigning: assetSigningSource(),
+      appUrl: appUrlStatus(),
     },
     integrations: listAdapters(),
     timestamp: new Date().toISOString(),

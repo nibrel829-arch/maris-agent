@@ -9,6 +9,7 @@
 
 import { z } from 'zod';
 import type {
+  ManagerClarification,
   ManagerIntent,
   ManagerPlan,
   PlanStep,
@@ -40,17 +41,134 @@ interface StepDraft {
   input: Record<string, unknown>;
   stage: PlanStep['stage'];
   clarification?: string | null;
+  /** Input key a user answer fills to resolve `clarification`. */
+  clarificationField?: string | null;
   dependsOn?: string[];
+}
+
+/** User answers keyed by input field (Phase 17). Re-planning applies them. */
+export type ClarificationAnswers = Partial<Record<string, string>>;
+
+/**
+ * Explicit audience wording in the request ("audience: dental clinics",
+ * "targeting ...", "for dental clinics in Karachi"). Returns null when the
+ * request does not name one, so the Manager asks instead of guessing.
+ */
+export function explicitAudience(request: string): string | null {
+  const labelled = request.match(/\b(?:target\s+audience|audience)\s*[:\-]\s*([^.;\n]{3,120})/i);
+  if (labelled?.[1]) return labelled[1].trim();
+  const targeting = request.match(/\b(?:targeting|aimed at)\s+([^.;\n]{3,120})/i);
+  if (targeting?.[1]) return targeting[1].trim();
+  const forPhrase = request.match(
+    /\bfor\s+(?!(?:our|my|the|this|a|an|your|their|his|her|its)\b)([a-z][\w-]*(?:\s+[\w-]+){0,5}?)\s+in\s+([A-Z][\w-]+(?:\s+[A-Z][\w-]+)?)/,
+  );
+  if (forPhrase?.[1] && forPhrase[2]) return `${forPhrase[1]} in ${forPhrase[2]}`;
+  return null;
+}
+
+/**
+ * Adds the research pair used by evidence-based work: open a brief, then
+ * record the user-supplied sources against it. With no sources supplied both
+ * steps are clarifications, so no empty brief is ever presented as research.
+ * Returns the id of the brief step for later references.
+ */
+function pushResearch(
+  steps: StepDraft[],
+  args: { topic: string; question: string; domain: string; skillId: SkillId; rationale: string },
+  answers: ClarificationAnswers,
+): string {
+  const sourcesText = (answers.sources ?? '').trim();
+  // Research needs at least one sourced claim. Unsourced lines are kept as
+  // interpretation, but a brief made only of them is not research, so the step
+  // asks again instead of completing.
+  const hasSourcedClaim = sourcesText
+    ? parseSourcedLines(sourcesText).some((entry) => entry.grade === 'EVIDENCE')
+    : false;
+  const question = sourcesText
+    ? 'Each claim needs a source. Add at least one line as "claim | source", for example "Clinics book appointments by phone | Owner interview, March 2026".'
+    : 'Share the sources or notes to base this research on, one per line. Use "claim | source" to attach a source to a claim.';
+  const briefIndex = steps.length;
+  steps.push({
+    title: 'Open a structured research brief',
+    rationale: args.rationale,
+    skillId: args.skillId,
+    toolName: 'create_research_brief',
+    input: { topic: args.topic.slice(0, 200), question: args.question, domain: args.domain },
+    stage: 'execute',
+    clarification: hasSourcedClaim ? null : question,
+    clarificationField: 'sources',
+  });
+  const briefId = `step-${briefIndex + 1}`;
+  steps.push({
+    title: 'Record the supplied sources against the brief',
+    rationale:
+      'Only material the user supplied is recorded. Claims without a source stay unverified and are never presented as fact.',
+    skillId: args.skillId,
+    toolName: 'add_research_evidence',
+    input: {
+      briefId: stepRef(briefId, 'brief.id'),
+      evidence: sourcesText ? parseSourcedLines(sourcesText) : [],
+    },
+    stage: 'execute',
+    clarification: hasSourcedClaim ? null : question,
+    clarificationField: 'sources',
+  });
+  return briefId;
+}
+
+/**
+ * A single-line origin label for a lead, from the first supplied source line.
+ * "claim | source" keeps only the source part; the full multi-line answer is
+ * never written into a lead record or a CSV cell.
+ */
+export function leadSourceLabel(text: string | undefined): string {
+  const first = (text ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[-*]\s*/, ''))
+    .find((line) => line.length > 0);
+  if (!first) return 'unverified';
+  const parts = first.split('|');
+  const label = (parts.length > 1 ? parts.slice(1).join('|') : first).replace(/\s+/g, ' ').trim();
+  return (label || 'unverified').slice(0, 200);
+}
+
+/** Parses "claim | source" lines. A line without a source stays unverified. */
+export function parseSourcedLines(text: string): Array<{
+  claim: string;
+  source: string | null;
+  grade: 'EVIDENCE' | 'INTERPRETATION';
+  confidence: number;
+}> {
+  return text
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/^[-*]\s*/, ''))
+    .filter((line) => line.length > 0)
+    .slice(0, 50)
+    .map((line) => {
+      const [claimPart, ...sourceParts] = line.split('|');
+      const source = sourceParts.join('|').trim();
+      const hasSource = source.length > 0;
+      return {
+        claim: (claimPart ?? '').trim().slice(0, 1000) || line.slice(0, 1000),
+        source: hasSource ? source.slice(0, 500) : null,
+        grade: hasSource ? 'EVIDENCE' : 'INTERPRETATION',
+        confidence: hasSource ? 0.6 : 0.3,
+      };
+    });
 }
 
 /** Deterministic step templates per work type. */
 function templates(
   intent: ManagerIntent,
   understood: UnderstoodRequest,
+  answers: ClarificationAnswers,
 ): { steps: StepDraft[]; openQuestions: string[] } {
   const request = understood.objective;
-  const openQuestions: string[] = [...understood.missingInformation];
+  const openQuestions: string[] = understood.missingInformation.filter(
+    (item) => !(answers.sources && /sources were provided/i.test(item)),
+  );
   const steps: StepDraft[] = [];
+  const audience = answers.audience?.trim() || explicitAudience(request);
 
   const platformList = (understood.entities.platforms ?? []) as string[];
   const emailList = (understood.entities.emails ?? []) as string[];
@@ -61,19 +179,18 @@ function templates(
     case 'dental_research':
     case 'research': {
       const skill: SkillId = intent.medicalDomain ? 'dental-research' : 'research-intelligence';
-      steps.push({
-        title: 'Open a structured research brief',
-        rationale:
-          'The request needs evidence. A brief fixes the question, method and gaps before any claim is made.',
-        skillId: skill,
-        toolName: 'create_research_brief',
-        input: {
-          topic: topic.slice(0, 200),
+      pushResearch(
+        steps,
+        {
+          topic: topic,
           question: request,
           domain: intent.medicalDomain ? 'dental' : 'general',
+          skillId: skill,
+          rationale:
+            'The request needs evidence. A brief fixes the question and records only the sources the user supplies.',
         },
-        stage: 'execute',
-      });
+        answers,
+      );
       if (intent.medicalDomain) {
         steps.push({
           title: 'Screen the brief for medical safety',
@@ -84,21 +201,22 @@ function templates(
           stage: 'verify',
         });
       }
-      openQuestions.push(
-        'Which sources should be recorded against this brief? No claim can be stated as fact without one.',
-      );
       break;
     }
 
     case 'product_development': {
-      steps.push({
-        title: 'Research demand and alternatives',
-        rationale: 'A product concept needs a demand signal and known alternatives before scope is set.',
-        skillId: 'research-intelligence',
-        toolName: 'create_research_brief',
-        input: { topic: topic.slice(0, 200), question: `Demand and alternatives for: ${request}`, domain: 'market' },
-        stage: 'execute',
-      });
+      pushResearch(
+        steps,
+        {
+          topic: topic,
+          question: `Demand and alternatives for: ${request}`,
+          domain: 'market',
+          skillId: 'research-intelligence',
+          rationale: 'A product concept needs a demand signal and known alternatives before scope is set.',
+        },
+        answers,
+      );
+      const targetCustomer = answers.targetCustomer?.trim() ?? '';
       steps.push({
         title: 'Create the product concept',
         rationale: 'Applies the documented reasoning chain from target customer through quality control.',
@@ -106,15 +224,18 @@ function templates(
         toolName: 'create_product_concept',
         input: {
           name: topic.slice(0, 200),
-          targetCustomer: 'To be confirmed — recorded as an open question rather than assumed.',
+          targetCustomer,
           problem: request,
           demandSignal: null,
           existingAlternatives: [],
           missingOpportunity: '',
         },
         stage: 'execute',
+        clarification: targetCustomer
+          ? null
+          : 'Who is the target customer? The concept cannot be created without a named customer segment.',
+        clarificationField: 'targetCustomer',
       });
-      openQuestions.push('Who is the target customer? This must be confirmed to complete the concept.');
       break;
     }
 
@@ -160,11 +281,15 @@ function templates(
           input: {
             title: topic.slice(0, 200),
             objective: request,
-            audience: 'To be confirmed.',
+            audience: audience ?? '',
             channels: platformList.length ? platformList : ['linkedin'],
             messages: [topic],
           },
           stage: 'execute',
+          clarification: audience
+            ? null
+            : 'Who is the campaign audience? Name the customer group, e.g. "audience: women aged 25-40 in Lahore".',
+          clarificationField: 'audience',
         });
       }
       if (platformList.length === 0) {
@@ -190,7 +315,7 @@ function templates(
         input: {
           title: topic.slice(0, 200),
           platforms: platformList.length ? platformList : ['linkedin'],
-          cadence: 'To be confirmed.',
+          cadence: answers.cadence?.trim() || 'Proposed: three posts per week, adjusted to the team\'s capacity.',
           themes: [topic],
           contentPillars: [topic],
         },
@@ -249,22 +374,28 @@ function templates(
 
     case 'lead_generation':
     case 'lead_qualification': {
-      steps.push({
-        title: 'Define lead criteria and sources',
-        rationale: 'Lead work must record where each candidate came from; nothing is invented.',
-        skillId: 'lead-generation',
-        toolName: 'create_research_brief',
-        input: { topic: topic.slice(0, 200), question: `Lead criteria and sources for: ${request}`, domain: 'market' },
-        stage: 'execute',
-      });
+      pushResearch(
+        steps,
+        {
+          topic: topic,
+          question: `Lead criteria and sources for: ${request}`,
+          domain: 'market',
+          skillId: 'lead-generation',
+          rationale: 'Lead work must record where each candidate came from; nothing is invented.',
+        },
+        answers,
+      );
+      const leadName = answers.name?.trim() ?? '';
       steps.push({
         title: 'Record a lead',
         rationale: 'Persists a candidate with its provenance.',
         skillId: 'lead-generation',
         toolName: 'create_lead',
-        input: { name: topic.slice(0, 200), source: 'unverified' },
-        clarification:
-          'No lead name, company and source were supplied. Provide them so the system can record a real lead rather than a placeholder.',
+        input: { name: leadName, source: leadSourceLabel(answers.sources) },
+        clarification: leadName
+          ? null
+          : 'No lead name, company and source were supplied. Provide the lead name and where it came from.',
+        clarificationField: 'name',
         stage: 'execute',
       });
       if (intent.primary === 'lead_qualification') {
@@ -311,30 +442,38 @@ function templates(
             category: intent.primary === 'outreach' ? 'outreach' : 'sales',
             subject: topic.slice(0, 200),
             body: `Hi {{contact.name}},\n\n${request}\n\nKind regards,\n{{user.name}}`,
+            audience: audience ?? '',
           },
           stage: 'execute',
+          clarification: audience
+            ? null
+            : 'Who is the outreach audience? Name the group you are contacting, e.g. "dental clinics in Karachi".',
+          clarificationField: 'audience',
         });
       }
 
+      const hasRecipient = emailList.length > 0;
       const prepareStepId = `step-${steps.length + 1}`;
-      steps.push({
-        title: 'Prepare the personalized email',
-        rationale: 'Preparation is internal. Nothing is sent at this stage (CEO spec §9).',
-        skillId: 'sales-outreach-email',
-        toolName: 'prepare_email',
-        input: {
-          toEmail: emailList[0] ?? '',
-          subject: topic.slice(0, 200),
-          body: request,
-        },
-        clarification:
-          emailList.length === 0
-            ? 'No recipient email address was supplied. Provide one so the email can be prepared.'
-            : null,
-        stage: 'execute',
-      });
+      if (hasRecipient) {
+        steps.push({
+          title: 'Prepare the personalized email',
+          rationale: 'Preparation is internal. Nothing is sent at this stage (CEO spec §9).',
+          skillId: 'sales-outreach-email',
+          toolName: 'prepare_email',
+          input: {
+            toEmail: emailList[0],
+            subject: topic.slice(0, 200),
+            body: request,
+          },
+          stage: 'execute',
+        });
+      } else {
+        openQuestions.push(
+          'No recipient was named, so no individual email was prepared. The template above is the draft to reuse.',
+        );
+      }
 
-      if (wantsExternalAction(request, 'send')) {
+      if (hasRecipient && wantsExternalAction(request, 'send')) {
         steps.push({
           title: 'Send the prepared email',
           rationale:
@@ -544,6 +683,7 @@ function toPlanSteps(drafts: StepDraft[]): PlanStep[] {
       stage: draft.stage,
       dependsOn: draft.dependsOn ?? (previousId ? [previousId] : []),
       clarification: draft.clarification ?? null,
+      clarificationField: draft.clarificationField ?? null,
     });
 
     previousId = id;
@@ -568,11 +708,17 @@ function selectedSkills(intent: ManagerIntent, steps: PlanStep[]): SkillId[] {
   );
 }
 
+/**
+ * Builds the deterministic plan. `answers` are the user's responses to earlier
+ * clarifications; passing them re-plans the same step structure with the real
+ * values filled in, so a resumed task keeps stable step ids.
+ */
 export function buildPlan(
   intent: ManagerIntent,
   understood: UnderstoodRequest,
+  answers: ClarificationAnswers = {},
 ): ManagerPlan {
-  const { steps: drafts, openQuestions } = templates(intent, understood);
+  const { steps: drafts, openQuestions } = templates(intent, understood, answers);
   const steps = toPlanSteps(drafts);
 
   return {
@@ -580,9 +726,37 @@ export function buildPlan(
     steps,
     skills: selectedSkills(intent, steps),
     estimatedSteps: steps.length,
-    openQuestions: [...new Set(openQuestions)],
+    openQuestions: [
+      ...new Set([
+        ...openQuestions,
+        ...steps.flatMap((step) => (step.clarification ? [step.clarification] : [])),
+      ]),
+    ],
     planner: 'deterministic',
+    clarifications: buildClarifications(steps),
   };
+}
+
+/**
+ * One clarification per unresolved field. Steps that share a field (the two
+ * research steps) produce one question, so the user answers once.
+ */
+export function buildClarifications(steps: readonly PlanStep[]): ManagerClarification[] {
+  const seen = new Map<string, ManagerClarification>();
+  for (const step of steps) {
+    if (!step.clarification) continue;
+    const field = step.clarificationField ?? `step:${step.id}`;
+    if (seen.has(field)) continue;
+    seen.set(field, {
+      id: `clar-${field}`,
+      stepId: step.id,
+      field,
+      question: step.clarification,
+      answer: null,
+      answeredAt: null,
+    });
+  }
+  return [...seen.values()];
 }
 
 /**

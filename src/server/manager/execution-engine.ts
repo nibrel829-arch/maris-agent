@@ -287,6 +287,17 @@ export async function executeSteps(
 
     try {
       const output = await tool.execute(parsed.data as never, context);
+      // A tool that reports its own provider/configuration failure as data is a
+      // failed step, never a success (Phase 17: `send_email` returned
+      // `status: 'not_configured'` and was recorded as succeeded).
+      const interpreted = interpretToolOutput(output);
+      if (interpreted) {
+        upsert(finish({ status: 'failed', output, issues: [interpreted] }));
+        if (!interpreted.retryable) {
+          return { stepResults: results, haltedOnApproval: null, haltedOnError: { stepId: step.id, issue: interpreted } };
+        }
+        continue;
+      }
       upsert(finish({ status: 'succeeded', output }));
     } catch (error) {
       const issue = classifyError(error);
@@ -300,6 +311,50 @@ export async function executeSteps(
   }
 
   return { stepResults: results, haltedOnApproval: null, haltedOnError: null };
+}
+
+/**
+ * Tools return provider outcomes as data. These statuses mean the external or
+ * configured capability did not perform the action. Domain statuses such as
+ * `DRAFT`, `SENT` or `skipped` (already sent) are not failures.
+ */
+export function interpretToolOutput(output: unknown): ManagerIssue | null {
+  if (!output || typeof output !== 'object' || Array.isArray(output)) return null;
+  const record = output as Record<string, unknown>;
+  const status = record.status;
+  if (status !== 'failed' && status !== 'not_configured' && status !== 'unsupported') return null;
+
+  const reason =
+    (typeof record.reason === 'string' && record.reason) ||
+    (typeof record.message === 'string' && record.message) ||
+    null;
+  const retryable = record.retryable === true;
+
+  if (status === 'not_configured') {
+    return {
+      code: 'NOT_CONFIGURED',
+      message: reason ?? 'This capability is not configured for this environment.',
+      severity: 'warning',
+      retryable: false,
+      errorClass: 'not_configured',
+    };
+  }
+  if (status === 'unsupported') {
+    return {
+      code: 'UNSUPPORTED',
+      message: reason ?? 'The official platform does not support this action.',
+      severity: 'warning',
+      retryable: false,
+      errorClass: 'unsupported',
+    };
+  }
+  return {
+    code: 'PROVIDER_FAILED',
+    message: reason ?? 'The provider rejected the action. Nothing was delivered.',
+    severity: 'error',
+    retryable,
+    errorClass: retryable ? 'network' : 'server',
+  };
 }
 
 export { emptyResult, newId };

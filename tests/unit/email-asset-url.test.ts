@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ASSET_URL_TTL_SECONDS,
   assetSigningSecret,
@@ -30,6 +30,11 @@ function params(url: string) {
     sig: query.get('sig'),
   };
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
 
 describe('Signed Content Library asset URLs', () => {
   it('builds an absolute URL that carries an expiring signature', () => {
@@ -90,21 +95,24 @@ describe('Signed Content Library asset URLs', () => {
   });
 
   it('has a stable signing secret per process', () => {
-    expect(assetSigningSecret().length).toBeGreaterThanOrEqual(32);
+    expect(assetSigningSecret()?.length ?? 0).toBeGreaterThanOrEqual(32);
     expect(assetSigningSecret()).toBe(assetSigningSecret());
   });
 
-  it('shares the ephemeral secret across module registries in one process', () => {
+  it('shares the ephemeral secret across module registries in one process', async () => {
     // Next.js dev evaluates a route handler in a different module registry from
     // the code that minted the URL. Both must agree on the secret, otherwise a
     // freshly compiled route rejects links the renderer just produced.
-    const store = globalThis as typeof globalThis & Record<symbol, string | undefined>;
-    const key = Symbol.for('nibrexo.email.assetSigningSecret.ephemeral');
-    store[key] = undefined;
-    const first = assetSigningSecret();
-    // Simulate a second registry by re-reading through the shared symbol.
-    store[key] = undefined;
-    expect(assetSigningSecret()).toBe(first);
+    vi.stubEnv('NODE_ENV', 'test');
+    for (const name of ['NIBREXO_EMAIL_ASSET_SECRET', 'NIBREXO_TOKEN_ENCRYPTION_KEY', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY']) {
+      vi.stubEnv(name, '');
+    }
+    const first = (await import('@/server/email/asset-url')).assetSigningSecret();
+    vi.resetModules();
+    const second = (await import('@/server/email/asset-url')).assetSigningSecret();
+    vi.unstubAllEnvs();
+    expect(first).not.toBeNull();
+    expect(second).toBe(first);
   });
 
   it('derives the request origin from headers, ignoring the local host when proxied', () => {

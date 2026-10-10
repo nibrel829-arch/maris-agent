@@ -208,6 +208,7 @@ export function createMemoryRepository(seed?: Store): NibrexoRepository {
     communityPlans: collection('community_plans'),
     qualityReports: collection('quality_reports'),
     approvals: collection('approvals'),
+    managerArtifacts: collection('manager_artifacts'),
     activityLogs: collection('activity_logs'),
     notifications: collection('notifications'),
     memory: collection('manager_memory'),

@@ -5,6 +5,7 @@ import { getRequestRepository } from '@/server/db';
 import { resolveMediaFile } from '@/server/content/service';
 import { getRequestMediaStorage } from '@/server/content/storage';
 import { mediaIdSchema } from '@/server/content/validation';
+import { MEDIA_RESPONSE_SECURITY_HEADERS } from '@/server/content/media-headers';
 
 export const dynamic = 'force-dynamic';
 
@@ -66,6 +67,7 @@ export async function GET(_request: Request, extra: RouteParams): Promise<NextRe
       'Content-Length': String(resolved.bytes.byteLength),
       'Content-Disposition': `inline; filename="${safeName}"`,
       'Cache-Control': 'private, max-age=3600',
+      ...MEDIA_RESPONSE_SECURITY_HEADERS,
     },
   });
 }

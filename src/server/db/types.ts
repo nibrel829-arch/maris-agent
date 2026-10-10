@@ -32,7 +32,7 @@ import type {
   SocialOAuthState,
   UUID,
 } from '@/types/domain';
-import type { ManagerTaskSnapshot } from '@/types/manager';
+import type { ManagerArtifactRecord, ManagerTaskSnapshot } from '@/types/manager';
 import type { InboxDataAccess } from '@/types/inbox';
 
 export interface BaseRow {
@@ -168,6 +168,8 @@ export interface NibrexoRepository {
   communityPlans: Collection<CommunityPlan>;
   qualityReports: Collection<QualityReport>;
   approvals: Collection<ApprovalRecord>;
+  /** Phase 17 — generated Manager deliverables (DOCX/CSV/HTML/TXT). Immutable once written. */
+  managerArtifacts: Collection<ManagerArtifactRecord>;
   activityLogs: Collection<ActivityLog & BaseRow>;
   notifications: Collection<NotificationRow>;
   memory: Collection<MemoryRecord>;

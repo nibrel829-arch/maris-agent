@@ -204,8 +204,9 @@ describe('Manager planning for designed emails', () => {
     const plan = planFor('Create a follow-up email sequence for new enquiries');
     expect(plan.steps.some((step) => step.toolName === 'create_email_template')).toBe(true);
     expect(plan.steps.some((step) => step.toolName === 'create_email_design')).toBe(false);
-    const prepare = plan.steps.find((step) => step.toolName === 'prepare_email');
-    expect(prepare?.clarification).toMatch(/recipient email address/i);
+    const template = plan.steps.find((step) => step.toolName === 'create_email_template');
+    expect(template?.clarification).toMatch(/outreach audience/i);
+    expect(plan.steps.some((step) => step.toolName === 'prepare_email')).toBe(false);
   });
 
   it('still routes an explicit send request through the approval gate', () => {

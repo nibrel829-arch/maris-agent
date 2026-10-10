@@ -3,20 +3,12 @@ import { Badge, EmptyState } from '@/components/ui/primitives';
 import { ArrowUpRightIcon, CommandIcon, ClockIcon } from '@/components/ui/icons';
 import { relativeTime } from './ActivityTimeline';
 import type { ManagerTaskSnapshot } from '@/types/manager';
+import { TASK_TONE, taskStateLabel } from '@/features/manager/status';
 
-const STATE_TONE: Record<string, 'info' | 'success' | 'warning' | 'danger' | 'neutral'> = {
-  COMPLETED: 'success',
-  FAILED: 'danger',
-  WAITING_APPROVAL: 'warning',
-  EXECUTING: 'info',
-  VERIFYING: 'info',
-  PLANNING: 'info',
-  RECEIVED: 'neutral',
-  CANCELLED: 'neutral',
-};
+const STATE_TONE: Record<string, 'info' | 'success' | 'warning' | 'danger' | 'neutral'> = TASK_TONE;
 
 function humanState(state: string): string {
-  return state.replace(/_/g, ' ').toLowerCase().replace(/^./, (letter) => letter.toUpperCase());
+  return taskStateLabel(state);
 }
 
 export function RecentTasks({

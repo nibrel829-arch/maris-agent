@@ -51,7 +51,12 @@ describe('Approval lifecycle (PDF #08 §8, CEO spec §9)', () => {
 
     const sendResults = resumed.stepResults.filter((result) => result.toolName === 'send_email');
     expect(sendResults).toHaveLength(1);
-    expect(sendResults[0]?.status).toBe('succeeded');
+    // No provider is configured in tests. The approved send is executed exactly
+    // once and reports the unconfigured provider as a failure, never as sent.
+    expect(sendResults[0]?.status).toBe('failed');
+    expect(sendResults[0]?.issues[0]?.errorClass).toBe('not_configured');
+    expect(resumed.state).toBe('BLOCKED');
+    expect(resumed.result?.summary).not.toMatch(/Verified and delivered/);
 
     const approvalsAfter = (await store.approvals.list(TEST_ORG, { limit: 100 })).filter(
       (entry) => entry.task_id === task.id,

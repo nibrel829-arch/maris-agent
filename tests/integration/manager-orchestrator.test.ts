@@ -6,19 +6,17 @@ const run = (request: string, role: Parameters<typeof actor>[0] extends never ? 
   runManagerTask({ request, actor: actor({ role }), repo: repo() });
 
 describe('NIBREXO CEO / Manager — orchestration (integration)', () => {
-  it('completes a research request and produces a research brief artifact', async () => {
+  it('asks for sources instead of completing a research request with no evidence', async () => {
     const snapshot = await run('Research the market for dental scheduling software');
 
-    expect(snapshot.state).toBe('COMPLETED');
+    // Phase 17: an empty research brief is never a completed research result.
+    expect(snapshot.state).toBe('NEEDS_INPUT');
     expect(snapshot.intent?.primary).toBe('research');
-    expect(snapshot.result?.artifacts.length).toBeGreaterThan(0);
+    expect(snapshot.result?.artifacts).toEqual([]);
+    expect(snapshot.result?.deliverables).toEqual([]);
+    expect(snapshot.result?.reasons.some((reason) => reason.code === 'NEEDS_CLARIFICATION')).toBe(true);
+    expect(snapshot.plan?.clarifications?.map((item) => item.field)).toContain('sources');
     expect(snapshot.result?.aiEnabled).toBe(false);
-
-    const brief = snapshot.result?.artifacts.find((artifact) => {
-      const content = artifact.content as Record<string, unknown> | null;
-      return Boolean(content && 'brief' in content);
-    });
-    expect(brief).toBeDefined();
   });
 
   it('records the full CEO pipeline in the task trace', async () => {
@@ -35,17 +33,12 @@ describe('NIBREXO CEO / Manager — orchestration (integration)', () => {
     expect(['COMPLETED', 'FAILED', 'WAITING_APPROVAL']).toContain(snapshot.state);
   });
 
-  it('flags dental output for medical review rather than answering clinically', async () => {
+  it('plans a medical safety screen for dental output rather than answering clinically', async () => {
     const snapshot = await run('Research dental implant aftercare protocols');
 
-    const medicalArtifact = snapshot.result?.artifacts.find((artifact) => {
-      const content = artifact.content as Record<string, unknown> | null;
-      return Boolean(content && 'brief' in content);
-    });
-    const brief = (medicalArtifact?.content as { brief?: { medical_review_required?: boolean } } | undefined)
-      ?.brief;
-
-    expect(brief?.medical_review_required).toBe(true);
+    // The brief is only created once sources are supplied (see manager-execution.test.ts).
+    expect(snapshot.state).toBe('NEEDS_INPUT');
+    expect(snapshot.plan?.steps.some((step) => step.toolName === 'run_medical_safety_check')).toBe(true);
   });
 
   it('never claims an external action happened when it only prepared one', async () => {
@@ -53,14 +46,13 @@ describe('NIBREXO CEO / Manager — orchestration (integration)', () => {
       'Create a follow-up email for the clinic at clinic@example.com about their enquiry',
     );
 
-    const prepared = snapshot.result?.artifacts.find((artifact) => {
-      const content = artifact.content as Record<string, unknown> | undefined;
-      return Boolean(content && 'emailLog' in content);
-    });
-    const emailLog = (prepared?.content as { emailLog?: { status?: string } } | undefined)?.emailLog;
+    // Preparation only: the recorded email log is a DRAFT and nothing was sent.
+    const prepared = snapshot.stepResults.find((result) => result.toolName === 'prepare_email');
+    const emailLog = (prepared?.output as { emailLog?: { status?: string } } | null)?.emailLog;
 
     expect(emailLog?.status).toBe('DRAFT');
-    expect(snapshot.result?.summary).toMatch(/prepared/i);
+    expect(snapshot.stepResults.some((result) => result.toolName === 'send_email')).toBe(false);
+    expect(snapshot.result?.summary).not.toMatch(/sent|delivered/i);
   });
 
   it('records skipped steps as open questions instead of inventing input', async () => {
@@ -204,8 +196,9 @@ describe('Manager deliverables', () => {
     const snapshot = await run(
       'Build a product: a treatment-planning template pack for dental clinics',
     );
-    const artifact = snapshot.result?.artifacts[0];
-    expect(artifact?.uncertainties.length).toBeGreaterThan(0);
+    // The missing target customer is a question, never a completed concept.
+    expect(snapshot.state).toBe('NEEDS_INPUT');
+    expect(snapshot.result?.reasons.map((reason) => reason.message).join(' ')).toMatch(/target customer/i);
   });
 
   it('records the AI layer state honestly', async () => {

@@ -12,7 +12,8 @@ const EMPTY_OUTPUT_SENTINELS = new Set(['', 'null', 'undefined', '{}', '[]']);
 
 function hasSubstance(output: unknown): boolean {
   if (output === null || output === undefined) return false;
-  if (Array.isArray(output)) return output.length > 0;
+  // A list result is a real answer even when empty (e.g. no connected accounts).
+  if (Array.isArray(output)) return true;
   if (typeof output === 'object') {
     const keys = Object.keys(output as Record<string, unknown>);
     if (keys.length === 0) return false;
@@ -27,6 +28,7 @@ function hasSubstance(output: unknown): boolean {
 export function verify(
   steps: readonly PlanStep[],
   results: readonly StepResult[],
+  options: { deliverableCount?: number } = {},
 ): VerificationResult {
   const checks: VerificationResult['checks'] = [];
   const issues: ManagerIssue[] = [];
@@ -92,7 +94,28 @@ export function verify(
     detail: `${resolvedToolSteps} of ${plannedToolSteps} tool steps resolved.`,
   });
 
-  const ok = failed.length === 0 && denied.length === 0 && (executed.length > 0 || skipped.length > 0);
+  // Phase 17: `ok` means the work is verifiably DONE. A skipped step (missing
+  // input), a denied step, a step still waiting for approval or a failure all
+  // make the result not-ok. Skipped steps are reported by the outcome rules as
+  // NEEDS_INPUT; they are never treated as passed.
+  const substantive = executed.every((result) => hasSubstance(result.output));
+  const deliverableCount = options.deliverableCount ?? 0;
+  checks.push({
+    name: 'deliverable-produced',
+    passed: deliverableCount > 0,
+    detail:
+      deliverableCount > 0
+        ? `${deliverableCount} deliverable(s) generated from executed output.`
+        : 'No deliverable was generated from executed output.',
+  });
+  const ok =
+    failed.length === 0 &&
+    denied.length === 0 &&
+    skipped.length === 0 &&
+    awaiting.length === 0 &&
+    executed.length > 0 &&
+    substantive &&
+    deliverableCount > 0;
 
   return { ok, checks, issues };
 }

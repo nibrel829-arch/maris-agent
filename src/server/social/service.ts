@@ -16,7 +16,7 @@
  * views carry credential *metadata* (scopes, expiry) but no token material.
  */
 
-import { serverEnv } from '@/lib/env';
+import { configuredAppOrigin } from '@/lib/app-origin';
 import { ok, type ServiceResult } from '@/lib/result';
 import { checkPermission } from '@/server/auth/permissions';
 import type { NibrexoRepository } from '@/server/db/types';
@@ -98,12 +98,15 @@ const denied = (actor: ActorContext, action: 'create' | 'edit' | 'delete' | 'vie
  * origin is used, which keeps local development working with no config.
  */
 export function buildRedirectUri(platform: SocialPlatform, origin: string): string {
-  const base = (serverEnv().appUrl ?? origin).trim().replace(/\/+$/, '');
+  // The validated NIBREXO_APP_URL origin wins; an invalid one (including http://
+  // in production) is ignored and the request origin is used instead.
+  const base = configuredAppOrigin() ?? origin.trim().replace(/\/+$/, '');
   const url = new URL(`${base}/api/workspace/social/callback/${platform}`);
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
-    throw new Error('Redirect origin must be http(s).');
+  const production = process.env.NODE_ENV === 'production';
+  if (url.protocol === 'https:' || (url.protocol === 'http:' && !production)) {
+    return url.toString();
   }
-  return url.toString();
+  throw new Error('Redirect origin must be https in production.');
 }
 
 /** Browser-safe account view: credential metadata, never token material. */
